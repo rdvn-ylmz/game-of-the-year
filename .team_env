@@ -1,0 +1,4 @@
+export TEAM_PROJECT_ROOT="/home/rdvn-ylmz/Work/game-of-the-year"
+export TEAM_STATE_PATH="/home/rdvn-ylmz/Work/game-of-the-year/.team_state/runtime_state.json"
+export TEAM_EVENTS_PATH="/home/rdvn-ylmz/Work/game-of-the-year/.team_state/events.jsonl"
+export TEAM_PROFILE="low-spec"
