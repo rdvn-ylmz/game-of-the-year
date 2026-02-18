@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Last Light Courier MVP</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1322;
+      --panel: #141f35;
+      --panel-border: #30435f;
+      --text: #f4f7ff;
+      --muted: #9daec8;
+      --accent: #65e0ff;
+      --warn: #f6bb3c;
+      --danger: #ff5f6d;
+      --good: #6be895;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", sans-serif;
+      background: radial-gradient(circle at 20% 0%, #1a2f52 0%, var(--bg) 55%);
+      color: var(--text);
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 16px;
+    }
+
+    .screen {
+      width: min(960px, 100%);
+      border: 1px solid var(--panel-border);
+      background: linear-gradient(180deg, #192742, var(--panel));
+      border-radius: 14px;
+      padding: 20px;
+      position: relative;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(1.7rem, 3.4vw, 2.2rem);
+    }
+
+    p {
+      margin: 8px 0;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    button {
+      border: 1px solid var(--panel-border);
+      background: #223657;
+      color: var(--text);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    button:hover {
+      border-color: var(--accent);
+    }
+
+    .hud {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      margin-bottom: 12px;
+    }
+
+    .hud-item {
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      background: rgba(7, 15, 29, 0.55);
+      padding: 8px;
+      min-height: 62px;
+    }
+
+    .hud-label {
+      margin: 0;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+
+    .hud-value {
+      margin: 4px 0 0;
+      font-size: 1.2rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #timer.is-low {
+      color: var(--warn);
+      animation: pulse 0.8s ease-in-out infinite alternate;
+    }
+
+    #toast {
+      margin-top: 12px;
+      background: rgba(10, 21, 39, 0.92);
+      border: 1px solid var(--panel-border);
+      border-left: 4px solid var(--accent);
+      border-radius: 8px;
+      padding: 10px;
+      min-height: 44px;
+      word-break: break-word;
+    }
+
+    #toast.warn {
+      border-left-color: var(--warn);
+    }
+
+    #toast.danger {
+      border-left-color: var(--danger);
+    }
+
+    #toast.good {
+      border-left-color: var(--good);
+    }
+
+    #objective-strip {
+      margin: 12px 0 6px;
+      background: rgba(10, 21, 39, 0.75);
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 9px 10px;
+      word-break: break-word;
+    }
+
+    #ftue-overlay {
+      position: absolute;
+      left: 20px;
+      right: 20px;
+      bottom: 18px;
+      border: 1px solid var(--panel-border);
+      background: rgba(7, 15, 28, 0.97);
+      border-radius: 9px;
+      padding: 10px 12px;
+      max-width: 540px;
+      word-break: break-word;
+    }
+
+    .debug-controls {
+      margin-top: 18px;
+      border-top: 1px solid var(--panel-border);
+      padding-top: 14px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .debug-help {
+      flex-basis: 100%;
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    #end-panel {
+      position: absolute;
+      inset: 14px;
+      border-radius: 10px;
+      border: 1px solid var(--panel-border);
+      background: rgba(6, 12, 22, 0.96);
+      padding: 20px;
+      display: grid;
+      align-content: start;
+      gap: 10px;
+      animation: fade-in 180ms ease-out;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 6px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .cta-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .cta-row button:first-child {
+      background: #24508a;
+      border-color: #4f77af;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    @keyframes pulse {
+      from { transform: scale(1); }
+      to { transform: scale(1.05); }
+    }
+
+    @keyframes fade-in {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 760px) {
+      .hud {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      #ftue-overlay {
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section id="title-screen" class="screen">
+      <h1>Last Light Courier</h1>
+      <p>Collect 6 energy cells to unlock extraction.</p>
+      <button id="start-run" type="button">Start Run</button>
+      <p id="title-meta" class="muted">No runs yet.</p>
+    </section>
+
+    <section id="game-screen" class="screen" hidden>
+      <div class="hud">
+        <div class="hud-item">
+          <p class="hud-label">Timer</p>
+          <p class="hud-value" id="timer">360s</p>
+        </div>
+        <div class="hud-item">
+          <p class="hud-label">Integrity</p>
+          <p class="hud-value" id="integrity">3</p>
+        </div>
+        <div class="hud-item">
+          <p class="hud-label">Cells</p>
+          <p class="hud-value" id="cells">0/6</p>
+        </div>
+        <div class="hud-item">
+          <p class="hud-label">Multiplier</p>
+          <p class="hud-value" id="multiplier">x1.0</p>
+        </div>
+        <div class="hud-item">
+          <p class="hud-label">Score</p>
+          <p class="hud-value" id="score">0</p>
+        </div>
+      </div>
+
+      <p id="objective-strip">Collect 6 energy cells to unlock extraction.</p>
+      <div id="toast" hidden></div>
+      <div id="ftue-overlay" hidden></div>
+
+      <div class="debug-controls">
+        <button id="collect-cell" type="button">Collect Cell</button>
+        <button id="take-hit" type="button">Take Damage</button>
+        <button id="extract-now" type="button">Enter Extraction</button>
+        <p class="debug-help">
+          Keys: Move with WASD/Arrows, Space dash, C collect, H hit, E extract.
+        </p>
+      </div>
+
+      <section id="end-panel" hidden>
+        <h2 id="end-title">Extraction Confirmed</h2>
+        <p id="end-body"></p>
+        <p id="end-tip" class="muted" hidden></p>
+        <div class="stats">
+          <p>Final Score: <strong id="stat-score">0</strong></p>
+          <p>Best Delta: <strong id="stat-delta">+0</strong></p>
+          <p>Cells: <strong id="stat-cells">0/6</strong></p>
+          <p>Survived: <strong id="stat-time">0s</strong></p>
+        </div>
+        <div class="cta-row">
+          <button id="restart-run" type="button">Restart</button>
+          <button id="quit-title" type="button">Quit to Title</button>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script type="module" src="./src/main.mjs"></script>
+</body>
+</html>
