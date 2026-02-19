@@ -1,23 +1,38 @@
 export const UI_COPY = Object.freeze({
-  missionFraming: "Orbit is dirty. Shift starts now.",
-  runStart: "Run live. Build a safe first route.",
-  objective: "Vacuum junk and deposit at recycler for score.",
+  missionFraming: "Orbit defense active. Hostiles inbound.",
+  runStart: "Use SPACE to toggle magnet polarity.",
+  objective: "Defend the orbit. Master the magnet and time your Surge.",
   damage: "Hull hit. Stability reduced.",
   phaseTwo: "Meteor lanes tightening. Keep deposits steady.",
   phaseThree: "Solar pulse cadence rising. Bank often.",
+  orbitHint: "A/D: Orbit clockwise/counter-clockwise",
+  magnetHint: "SPACE: Toggle magnet polarity",
+  attractHint: "Hold SPACE to ATTRACT enemies for damage",
+  repelHint: "SPACE: REPEL projectiles when threatened",
+  overheatWarn: "OVERHEAT WARNING - Release SPACE",
+  overheatLockout: "MAGNET OFFLINE - Cooling down...",
+  attractTeaching: "ATTRACT pulls enemies in. Let them crash into you!",
+  repelTeaching: "REPEL pushes enemies and projectiles away!",
+  minibossSpawn: "PRIORITY TARGET: TANK MK.II",
+  minibossDefeat: "Target destroyed. Upgrade available.",
+  bossSpawn: "WARNING: MAGNET CORE DETECTED",
+  bossPhaseTwo: "Core destabilizing - increased activity",
+  bossPhaseThree: "CRITICAL: Core entering meltdown",
   comboGainTemplate: "Chain held. Combo now {combo}x.",
   comboTimeout: "Combo fading. Deposit now.",
   comboCapTemplate: "Combo capped at {combo_cap}x. Cash it in.",
   comboReset: "Combo reset to 1.0x. Rebuild the chain.",
-  orbitHint: "Left/Right to orbit the planet",
-  boostHint: "Space: short burst, then cooldown",
   carryHint: "More junk carried means slower turning",
   depositHint: "Press E in recycler zone to bank points",
   depositEmpty: "No scrap in hold to deposit.",
+  endVictoryTitle: "Core Secured",
+  endVictoryBody: "Threat eliminated. Orbit stabilized.",
+  endDefeatTitle: "Signal Lost",
+  endDefeatBody: "Defense breached. Recovery recommended.",
+  endKoTitle: "Signal Lost",
+  endKoBody: "Defense breached. Recovery recommended.",
   endTimerTitle: "Shift Complete",
   endTimerBody: "Final score locked. Recycler cycle closed.",
-  endKoTitle: "Hull Failure",
-  endKoBody: "Recovery tug inbound. Run terminated.",
   pbBadge: "New Personal Best",
   pbBody: "Clean orbit, cleaner record."
 });
@@ -34,7 +49,7 @@ const FAIL_TIPS = Object.freeze({
 });
 
 const DEFAULT_CONFIG = Object.freeze({
-  runDurationSeconds: 360,
+  runDurationSeconds: 180,
   integrity: 3,
   phaseTwoSecond: 121,
   phaseThreeSecond: 241,
@@ -46,7 +61,14 @@ const DEFAULT_CONFIG = Object.freeze({
   comboCap: 2.0,
   comboTimeoutSeconds: 8,
   comboWarningThresholdSeconds: 2,
-  scrapValue: 60
+  scrapValue: 60,
+  minibossSecond: 90,
+  bossSecond: 165,
+  overheatWarnThreshold: 75,
+  overheatLockoutThreshold: 100,
+  overheatCoolRate: 25,
+  overheatHeatRate: 30,
+  overheatLockoutDuration: 2000
 });
 
 function roundOne(value) {
@@ -90,7 +112,31 @@ export class GameRuntime {
       carryHintShown: false,
       depositHintShown: false,
       failReason: null,
-      overlayKey: null
+      overlayKey: null,
+      polarity: "off",
+      magnetActive: false,
+      heat: 0,
+      overheatLocked: false,
+      overheatLockoutEndTime: 0,
+      ftueSteps: {
+        orbitHint: false,
+        magnetIntro: false,
+        attractTeaching: false,
+        repelTeaching: false,
+        overheat50: false,
+        overheat75: false,
+        overheat100: false,
+        minibossSpawn: false,
+        minibossDefeat: false,
+        upgradeSelect: false,
+        bossSpawn: false,
+        bossPhase2: false,
+        bossPhase3: false
+      },
+      wave: 1,
+      bossPhase: 0,
+      minibossDefeated: false,
+      bossDefeated: false
     };
   }
 
@@ -161,6 +207,98 @@ export class GameRuntime {
     if (this.state.overlayKey === "boost_prompt") {
       this._hideOverlay();
     }
+  }
+
+  toggleMagnet() {
+    if (!this._canProcessActions()) {
+      return;
+    }
+
+    if (this.state.overheatLocked) {
+      return;
+    }
+
+    if (this.state.polarity === "off") {
+      this.state.polarity = "attract";
+      this.state.magnetActive = true;
+    } else if (this.state.polarity === "attract") {
+      this.state.polarity = "repel";
+    } else {
+      this.state.polarity = "attract";
+    }
+
+    this.state.ftueSteps.magnetIntro = true;
+    this._hideOverlay();
+  }
+
+  releaseMagnet() {
+    if (!this._canProcessActions()) {
+      return;
+    }
+
+    this.state.magnetActive = false;
+  }
+
+  setMagnetActive(active) {
+    if (!this._canProcessActions()) {
+      return;
+    }
+
+    if (this.state.overheatLocked) {
+      return;
+    }
+
+    if (active && this.state.polarity === "off") {
+      this.state.polarity = "attract";
+      this.state.magnetActive = true;
+      this.state.ftueSteps.magnetIntro = true;
+    } else if (active) {
+      this.state.magnetActive = true;
+    } else {
+      this.state.magnetActive = false;
+    }
+  }
+
+  triggerMinibossDefeat() {
+    if (!this._canProcessActions()) {
+      return;
+    }
+
+    this.state.minibossDefeated = true;
+    this.state.ftueSteps.minibossDefeat = true;
+    this._emit({
+      type: "toast",
+      key: "miniboss_defeat",
+      message: UI_COPY.minibossDefeat,
+      tone: "good"
+    });
+    this._emit({
+      type: "feedback",
+      key: "miniboss_defeat"
+    });
+  }
+
+  triggerBossDefeat() {
+    if (!this._canProcessActions()) {
+      return;
+    }
+
+    this.state.bossDefeated = true;
+    this._finishRun({ reason: "victory" });
+  }
+
+  selectUpgrade(upgradeId) {
+    if (!this._canProcessActions()) {
+      return;
+    }
+
+    this.state.ftueSteps.upgradeSelect = true;
+    this._emit({
+      type: "toast",
+      key: "upgrade_selected",
+      message: `Upgrade: ${upgradeId}`,
+      tone: "good"
+    });
   }
 
   collectScrap({ value = this.config.scrapValue } = {}) {
@@ -299,6 +437,65 @@ export class GameRuntime {
     this.state.carryValue = Number.isFinite(carryValue) ? carryValue : this.state.carryValue;
   }
 
+  addScore(points = 0) {
+    if (!this._canProcessActions()) {
+      return;
+    }
+
+    const delta = Number(points);
+    if (!Number.isFinite(delta)) {
+      return;
+    }
+
+    this.state.score = Math.max(0, this.state.score + delta);
+  }
+
+  syncCombatState(payload = {}) {
+    if (!this._canProcessActions()) {
+      return;
+    }
+
+    if (Number.isFinite(payload.hp)) {
+      this.state.hp = Math.max(0, Math.round(payload.hp));
+    }
+
+    if (Number.isFinite(payload.score)) {
+      this.state.score = Math.max(0, Math.round(payload.score));
+    }
+
+    if (Number.isFinite(payload.heat)) {
+      this.state.heat = Math.max(0, Math.min(100, payload.heat));
+    }
+
+    if (typeof payload.wave === "string" || Number.isFinite(payload.wave)) {
+      this.state.wave = payload.wave;
+    }
+
+    if (Number.isFinite(payload.bossPhase)) {
+      this.state.bossPhase = Math.max(0, Math.round(payload.bossPhase));
+    }
+
+    if (typeof payload.polarity === "string") {
+      this.state.polarity = payload.polarity;
+    }
+
+    if (typeof payload.magnetActive === "boolean") {
+      this.state.magnetActive = payload.magnetActive;
+    }
+
+    if (typeof payload.overheatLocked === "boolean") {
+      this.state.overheatLocked = payload.overheatLocked;
+    }
+
+    if (typeof payload.minibossDefeated === "boolean") {
+      this.state.minibossDefeated = payload.minibossDefeated;
+    }
+
+    if (typeof payload.bossDefeated === "boolean") {
+      this.state.bossDefeated = payload.bossDefeated;
+    }
+  }
+
   endRunFromGameOver() {
     if (!this.isRunning()) {
       return;
@@ -388,18 +585,146 @@ export class GameRuntime {
       this._showOverlay("orbit_prompt", UI_COPY.orbitHint);
     }
 
-    if (
-      this.state.firstRun &&
-      !this.state.boosted &&
+    if (this.state.firstRun &&
       !this.state.boostPromptShown &&
       this.state.elapsed >= this.config.boostPromptDelaySeconds
     ) {
       this.state.boostPromptShown = true;
-      this._showOverlay("boost_prompt", UI_COPY.boostHint);
+      this._showOverlay("magnet_prompt", UI_COPY.magnetHint);
     }
+
+    this._updateOverheat(delta);
+    this._updateWaveProgression(previousElapsed);
+    this._updateBossPhases();
 
     if (this.state.timeLeft <= 0) {
       this._finishRun({ reason: "timer" });
+    }
+  }
+
+  _updateOverheat(deltaSeconds) {
+    const msElapsed = deltaSeconds * 1000;
+    const nowMs = performance.now();
+
+    if (this.state.overheatLocked) {
+      if (nowMs >= this.state.overheatLockoutEndTime) {
+        this.state.overheatLocked = false;
+        this.state.heat = 0;
+        if (this.state.magnetActive && this.state.polarity !== "off") {
+        }
+      } else {
+        this.state.heat = Math.max(0, this.state.heat - (this.config.overheatCoolRate * deltaSeconds));
+      }
+      return;
+    }
+
+    if (this.state.magnetActive && this.state.polarity !== "off") {
+      this.state.heat = Math.min(100, this.state.heat + (this.config.overheatHeatRate * deltaSeconds));
+
+      if (this.state.heat >= this.config.overheatLockoutThreshold) {
+        this.state.overheatLocked = true;
+        this.state.overheatLockoutEndTime = nowMs + this.config.overheatLockoutDuration;
+        this.state.magnetActive = false;
+        this.state.ftueSteps.overheat100 = true;
+        this._emit({
+          type: "toast",
+          key: "overheat_lockout",
+          message: UI_COPY.overheatLockout,
+          tone: "danger"
+        });
+        this._emit({
+          type: "feedback",
+          key: "overheat_lockout"
+        });
+      } else if (this.state.heat >= this.config.overheatWarnThreshold && !this.state.ftueSteps.overheat75) {
+        this.state.ftueSteps.overheat75 = true;
+        this._emit({
+          type: "toast",
+          key: "overheat_warn",
+          message: UI_COPY.overheatWarn,
+          tone: "warn"
+        });
+      } else if (this.state.heat >= 50 && !this.state.ftueSteps.overheat50) {
+        this.state.ftueSteps.overheat50 = true;
+      }
+    } else {
+      this.state.heat = Math.max(0, this.state.heat - (this.config.overheatCoolRate * deltaSeconds));
+    }
+
+    if (this.state.magnetActive && this.state.polarity === "attract" && !this.state.ftueSteps.attractTeaching) {
+      this.state.ftueSteps.attractTeaching = true;
+      this._emit({
+        type: "toast",
+        key: "attract_teaching",
+        message: UI_COPY.attractTeaching,
+        tone: "neutral"
+      });
+    }
+  }
+
+  _updateWaveProgression(previousElapsed) {
+    if (this.state.elapsed >= this.config.minibossSecond && !this.state.ftueSteps.minibossSpawn) {
+      this.state.ftueSteps.minibossSpawn = true;
+      this.state.wave = "MINIBOSS";
+      this._emit({
+        type: "toast",
+        key: "miniboss_spawn",
+        message: UI_COPY.minibossSpawn,
+        tone: "danger"
+      });
+      this._emit({
+        type: "overlay",
+        key: "miniboss_spawn",
+        visible: true,
+        message: UI_COPY.minibossSpawn
+      });
+      setTimeout(() => this._hideOverlay(), 2000);
+    } else if (this.state.elapsed < this.config.minibossSecond) {
+      this.state.wave = 1;
+    }
+
+    if (this.state.elapsed >= this.config.bossSecond && !this.state.ftueSteps.bossSpawn) {
+      this.state.ftueSteps.bossSpawn = true;
+      this.state.wave = "BOSS";
+      this._emit({
+        type: "toast",
+        key: "boss_spawn",
+        message: UI_COPY.bossSpawn,
+        tone: "danger"
+      });
+      this._emit({
+        type: "overlay",
+        key: "boss_spawn",
+        visible: true,
+        message: UI_COPY.bossSpawn
+      });
+      setTimeout(() => this._hideOverlay(), 2000);
+    }
+  }
+
+  _updateBossPhases() {
+    if (!this.state.ftueSteps.bossSpawn) {
+      return;
+    }
+
+    if (!this.state.ftueSteps.bossPhase2 && this.state.bossPhase >= 2) {
+      this.state.ftueSteps.bossPhase2 = true;
+      this._emit({
+        type: "toast",
+        key: "boss_phase2",
+        message: UI_COPY.bossPhaseTwo,
+        tone: "warn"
+      });
+    }
+
+    if (!this.state.ftueSteps.bossPhase3 && this.state.bossPhase >= 3) {
+      this.state.ftueSteps.bossPhase3 = true;
+      this._emit({
+        type: "toast",
+        key: "boss_phase3",
+        message: UI_COPY.bossPhaseThree,
+        tone: "danger"
+      });
     }
   }
 
@@ -473,19 +798,28 @@ export class GameRuntime {
     }
 
     const timerComplete = reason === "timer";
-    this.state.status = timerComplete ? "completed" : "lost";
+    const victory = reason === "victory";
+    this.state.status = timerComplete || victory ? "completed" : "lost";
     this.state.paused = false;
     this.state.failReason = reason;
     this._hideOverlay();
 
+    const outcome = victory ? "victory" : (timerComplete ? "timer_complete" : "ko");
+    const title = victory
+      ? UI_COPY.endVictoryTitle
+      : (timerComplete ? UI_COPY.endTimerTitle : UI_COPY.endDefeatTitle);
+    const body = victory
+      ? UI_COPY.endVictoryBody
+      : (timerComplete ? UI_COPY.endTimerBody : UI_COPY.endDefeatBody);
+
     this._emit({
       type: "end",
-      outcome: timerComplete ? "timer_complete" : "ko",
-      title: timerComplete ? UI_COPY.endTimerTitle : UI_COPY.endKoTitle,
-      body: timerComplete ? UI_COPY.endTimerBody : UI_COPY.endKoBody,
+      outcome,
+      title,
+      body,
       primaryAction: "Restart Shift",
       secondaryAction: "Quit to Title",
-      tip: timerComplete ? this._nextFailTip("timer") : this._nextFailTip("integrity"),
+      tip: timerComplete ? this._nextFailTip("timer") : (victory ? "" : this._nextFailTip("integrity")),
       pbBadge: UI_COPY.pbBadge,
       pbBody: UI_COPY.pbBody,
       stats: {
