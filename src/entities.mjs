@@ -42,15 +42,15 @@ export class Player {
     this.carryValue = 0;
     
     this.accelForce = 280;
-    this.friction = 0.92;
+    this.friction = 0.96;
     this.maxSpeed = 220;
     this.rotationSpeed = 3.5;
-    this.boostForce = 450;
+    this.boostForce = 520;
     this.boostCooldown = 0;
-    this.boostCooldownMax = 1.5;
+    this.boostCooldownMax = 0.08;
     this.invulnerable = 0;
     
-    this.input = { left: false, right: false, boost: false };
+    this.input = { left: false, right: false, boost: false, reverse: false };
   }
 
   update(deltaSeconds, canvasWidth, canvasHeight) {
@@ -75,6 +75,11 @@ export class Player {
     if (this.input.boost && this.boostCooldown <= 0) {
       this.velocity = this.velocity.add(direction.multiply(this.boostForce * deltaSeconds));
       this.boostCooldown = this.boostCooldownMax;
+    }
+
+    if (this.input.reverse && this.boostCooldown <= 0) {
+      this.velocity = this.velocity.add(direction.multiply(-this.boostForce * 0.75 * deltaSeconds));
+      this.boostCooldown = this.boostCooldownMax * 0.75;
     }
 
     this.velocity = this.velocity.add(this.acceleration.multiply(deltaSeconds));

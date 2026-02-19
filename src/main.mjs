@@ -13,8 +13,12 @@ const STORAGE_KEYS = Object.freeze({
 const MOVEMENT_KEYS = new Set([
   "arrowleft",
   "arrowright",
+  "arrowup",
+  "arrowdown",
   "a",
-  "d"
+  "d",
+  "w",
+  "s"
 ]);
 
 const runtime = new GameRuntime();

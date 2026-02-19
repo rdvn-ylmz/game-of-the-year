@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { GameRuntime, UI_COPY } from "./game_state.mjs";
 
-test("phase warnings are one-shot at 121s and 241s", () => {
+test("phase warnings are one-shot at 121s and 160s", () => {
   const runtime = new GameRuntime();
   runtime.startRun();
   runtime.drainEvents();
@@ -21,7 +21,7 @@ test("phase warnings are one-shot at 121s and 241s", () => {
     0
   );
 
-  runtime.tick(110);
+  runtime.tick(39);
   events = runtime.drainEvents();
   assert.equal(
     events.filter((event) => event.type === "toast" && event.key === "phase_three").length,
@@ -52,6 +52,27 @@ test("run-start cadence toast fires on movement or timeout", () => {
   timeoutRuntime.tick(2.1);
   events = timeoutRuntime.drainEvents();
   assert.equal(events.some((event) => event.key === "run_start"), true);
+});
+
+test("runtime exposes objective and narrative toast events for chapter scripting", () => {
+  const runtime = new GameRuntime();
+  runtime.startRun();
+  runtime.drainEvents();
+
+  runtime.setObjective("Sector B: break shooter lanes.");
+  runtime.pushNarrativeToast({
+    key: "radio_custom",
+    tone: "warn",
+    message: "ARC-12: Shooter squad detected."
+  });
+
+  const events = runtime.drainEvents();
+  const objectiveEvent = events.find((event) => event.type === "objective");
+  const toastEvent = events.find((event) => event.type === "toast" && event.key === "radio_custom");
+  assert.ok(objectiveEvent);
+  assert.equal(objectiveEvent.message, "Sector B: break shooter lanes.");
+  assert.ok(toastEvent);
+  assert.equal(toastEvent.tone, "warn");
 });
 
 test("combo timeout warning fires once per chain and resets on expiry", () => {
@@ -158,4 +179,73 @@ test("timer-complete and KO end states use correct hierarchy and CTA order", () 
   assert.equal(koEnd.body, UI_COPY.endKoBody);
   assert.equal(koEnd.primaryAction, "Restart Shift");
   assert.equal(koEnd.secondaryAction, "Quit to Title");
+});
+
+test("boss defeat emits victory end state", () => {
+  const runtime = new GameRuntime();
+  runtime.startRun();
+  runtime.drainEvents();
+
+  runtime.addScore(900);
+  runtime.triggerBossDefeat();
+  const events = runtime.drainEvents();
+  const victoryEnd = events.find((event) => event.type === "end");
+
+  assert.ok(victoryEnd);
+  assert.equal(victoryEnd.outcome, "victory");
+  assert.equal(victoryEnd.title, UI_COPY.endVictoryTitle);
+  assert.equal(victoryEnd.body, UI_COPY.endVictoryBody);
+  assert.equal(victoryEnd.stats.finalScore, 900);
+  assert.equal(runtime.getSnapshot().status, "completed");
+});
+
+test("syncCombatState updates combat-facing HUD fields", () => {
+  const runtime = new GameRuntime();
+  runtime.startRun();
+  runtime.drainEvents();
+
+  runtime.syncCombatState({
+    hp: 2,
+    score: 1234,
+    heat: 78,
+    wave: "MINIBOSS",
+    bossPhase: 2,
+    polarity: "repel",
+    magnetActive: true,
+    overheatLocked: false,
+    minibossDefeated: true
+  });
+
+  const snapshot = runtime.getSnapshot();
+  assert.equal(snapshot.hp, 2);
+  assert.equal(snapshot.scoreRounded, 1234);
+  assert.equal(snapshot.heat, 78);
+  assert.equal(snapshot.wave, "MINIBOSS");
+  assert.equal(snapshot.bossPhase, 2);
+  assert.equal(snapshot.polarity, "repel");
+  assert.equal(snapshot.magnetActive, true);
+  assert.equal(snapshot.minibossDefeated, true);
+});
+
+test("boss phase toasts are HP-phase driven via syncCombatState", () => {
+  const runtime = new GameRuntime();
+  runtime.startRun();
+  runtime.drainEvents();
+
+  runtime.tick(166);
+  let events = runtime.drainEvents();
+  assert.equal(events.some((event) => event.type === "toast" && event.key === "boss_spawn"), true);
+  assert.equal(events.some((event) => event.type === "toast" && event.key === "boss_phase2"), false);
+  assert.equal(events.some((event) => event.type === "toast" && event.key === "boss_phase3"), false);
+
+  runtime.syncCombatState({ bossPhase: 2 });
+  runtime.tick(0.016);
+  events = runtime.drainEvents();
+  assert.equal(events.some((event) => event.type === "toast" && event.key === "boss_phase2"), true);
+  assert.equal(events.some((event) => event.type === "toast" && event.key === "boss_phase3"), false);
+
+  runtime.syncCombatState({ bossPhase: 3 });
+  runtime.tick(0.016);
+  events = runtime.drainEvents();
+  assert.equal(events.some((event) => event.type === "toast" && event.key === "boss_phase3"), true);
 });

@@ -1,40 +1,40 @@
 export const UI_COPY = Object.freeze({
-  missionFraming: "Orbit defense active. Hostiles inbound.",
-  runStart: "Use SPACE to toggle magnet polarity.",
-  objective: "Defend the orbit. Master the magnet and time your Surge.",
-  damage: "Hull hit. Stability reduced.",
-  phaseTwo: "Meteor lanes tightening. Keep deposits steady.",
-  phaseThree: "Solar pulse cadence rising. Bank often.",
-  orbitHint: "A/D: Orbit clockwise/counter-clockwise",
-  magnetHint: "SPACE: Toggle magnet polarity",
-  attractHint: "Hold SPACE to ATTRACT enemies for damage",
-  repelHint: "SPACE: REPEL projectiles when threatened",
+  missionFraming: "ARC-12: Orbital cleanup contract accepted. Hostiles already on grid.",
+  runStart: "W/S thrust, A/D steer. Space toggles polarity. Shift triggers Surge.",
+  objective: "Sector A: stabilize debris lanes and prep for reactor drift.",
+  damage: "Hull impact confirmed. Reroute power and reposition.",
+  phaseTwo: "Sector B online: shooter squads and anchor fields entering lane.",
+  phaseThree: "Sector C breach: Core Tyrant pattern cycle has begun.",
+  orbitHint: "A/D: steer your craft while thrusting with W/S.",
+  magnetHint: "SPACE: switch ATTRACT/REPEL. Hold to apply force.",
+  attractHint: "ATTRACT melts enemies on contact. Great for burst windows.",
+  repelHint: "REPEL reflects shots and shoves hazards away.",
   overheatWarn: "OVERHEAT WARNING - Release SPACE",
   overheatLockout: "MAGNET OFFLINE - Cooling down...",
-  attractTeaching: "ATTRACT pulls enemies in. Let them crash into you!",
-  repelTeaching: "REPEL pushes enemies and projectiles away!",
-  minibossSpawn: "PRIORITY TARGET: TANK MK.II",
-  minibossDefeat: "Target destroyed. Upgrade available.",
-  bossSpawn: "WARNING: MAGNET CORE DETECTED",
-  bossPhaseTwo: "Core destabilizing - increased activity",
-  bossPhaseThree: "CRITICAL: Core entering meltdown",
+  attractTeaching: "ATTRACT pulls scout packs into your collision zone.",
+  repelTeaching: "REPEL denies projectile lanes and buys cooling time.",
+  minibossSpawn: "PRIORITY TARGET: WARDEN FRAME ENTERING",
+  minibossDefeat: "Warden down. Upgrade cache unlocked.",
+  bossSpawn: "WARNING: CORE TYRANT HAS AWAKENED",
+  bossPhaseTwo: "Tyrant shell fractured. Volley density increasing.",
+  bossPhaseThree: "CRITICAL: Overload slam pattern now active.",
   comboGainTemplate: "Chain held. Combo now {combo}x.",
   comboTimeout: "Combo fading. Deposit now.",
   comboCapTemplate: "Combo capped at {combo_cap}x. Cash it in.",
   comboReset: "Combo reset to 1.0x. Rebuild the chain.",
-  carryHint: "More junk carried means slower turning",
-  depositHint: "Press E in recycler zone to bank points",
-  depositEmpty: "No scrap in hold to deposit.",
+  carryHint: "Heavy carry slows turns. Plan your lane exits.",
+  depositHint: "Deposit confirmed - keep chaining for score spikes.",
+  depositEmpty: "Hold is empty. Secure debris before banking.",
   endVictoryTitle: "Core Secured",
-  endVictoryBody: "Threat eliminated. Orbit stabilized.",
+  endVictoryBody: "Threat neutralized. Pocket Planet C-7 is stable.",
   endDefeatTitle: "Signal Lost",
-  endDefeatBody: "Defense breached. Recovery recommended.",
+  endDefeatBody: "Defense breached before Tyrant shutdown.",
   endKoTitle: "Signal Lost",
-  endKoBody: "Defense breached. Recovery recommended.",
+  endKoBody: "Defense breached before Tyrant shutdown.",
   endTimerTitle: "Shift Complete",
-  endTimerBody: "Final score locked. Recycler cycle closed.",
+  endTimerBody: "Shift ended on timer. Score archived by ARC-12.",
   pbBadge: "New Personal Best",
-  pbBody: "Clean orbit, cleaner record."
+  pbBody: "Cleaner orbit. Higher contract rank."
 });
 
 const FAIL_TIPS = Object.freeze({
@@ -52,7 +52,7 @@ const DEFAULT_CONFIG = Object.freeze({
   runDurationSeconds: 180,
   integrity: 3,
   phaseTwoSecond: 121,
-  phaseThreeSecond: 241,
+  phaseThreeSecond: 160,
   runStartToastDelaySeconds: 2,
   orbitPromptDelaySeconds: 3,
   boostPromptDelaySeconds: 8,
@@ -164,6 +164,41 @@ export class GameRuntime {
   setPaused(paused) {
     this.state.paused = Boolean(paused) && this.isRunning();
     return this.state.paused;
+  }
+
+  setObjective(message) {
+    if (!this._canProcessActions()) {
+      return;
+    }
+
+    const text = String(message || "").trim();
+    if (!text) {
+      return;
+    }
+
+    this._emit({
+      type: "objective",
+      key: "objective",
+      message: text
+    });
+  }
+
+  pushNarrativeToast({ key = "narrative", message = "", tone = "neutral" } = {}) {
+    if (!this._canProcessActions()) {
+      return;
+    }
+
+    const text = String(message || "").trim();
+    if (!text) {
+      return;
+    }
+
+    this._emit({
+      type: "toast",
+      key: String(key || "narrative"),
+      message: text,
+      tone: String(tone || "neutral")
+    });
   }
 
   getSnapshot() {

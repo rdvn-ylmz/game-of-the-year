@@ -50,6 +50,75 @@ const DIFFICULTY_PROFILES = Object.freeze({
   })
 });
 
+const STORY_CHAPTERS = Object.freeze([
+  Object.freeze({
+    id: "chapter_1",
+    start: 0,
+    end: 58,
+    label: "Sector A - Debris Storm",
+    objective: "Clear scout packs and keep heat under 70%.",
+    introToast: "ARC-12: Sector A online. Build charge safely."
+  }),
+  Object.freeze({
+    id: "chapter_2",
+    start: 58,
+    end: 128,
+    label: "Sector B - Reactor Drift",
+    objective: "Shooter squadrons incoming. Use REPEL to deflect shots.",
+    introToast: "Helios Net: Reactor drift detected. Hostile gunners inbound."
+  }),
+  Object.freeze({
+    id: "chapter_3",
+    start: 128,
+    end: 999,
+    label: "Sector C - Core Breach",
+    objective: "Break the Core Tyrant cycle before meltdown.",
+    introToast: "Nox: Last corridor. Burn surge on telegraphed windows."
+  })
+]);
+
+const STORY_BEATS = Object.freeze([
+  Object.freeze({ at: 6, key: "radio_01", tone: "neutral", message: "ARC-12: Two scout vectors approaching from lane north." }),
+  Object.freeze({ at: 24, key: "radio_02", tone: "warn", message: "Helios Net: Meteor wake active. Maintain orbit discipline." }),
+  Object.freeze({ at: 44, key: "radio_03", tone: "good", message: "Nox: Good chain. Hold attract and burst on contact." }),
+  Object.freeze({ at: 72, key: "radio_04", tone: "warn", message: "ARC-12: Shooter wing entering lane delta. REPEL their fire." }),
+  Object.freeze({ at: 96, key: "radio_05", tone: "danger", message: "Helios Net: Warden signature acquired. Brace for lock field." }),
+  Object.freeze({ at: 138, key: "radio_06", tone: "warn", message: "ARC-12: Core shell cracking. Expect multi-pattern volleys." }),
+  Object.freeze({ at: 168, key: "radio_07", tone: "danger", message: "Nox: Final push. Surge through the overload slam." })
+]);
+
+const WAVE_PATTERNS = Object.freeze({
+  chapter_1: Object.freeze([
+    Object.freeze({ lanes: [0, 3], roles: ["chaser", "chaser"] }),
+    Object.freeze({ lanes: [1, 5], roles: ["chaser", "chaser"] }),
+    Object.freeze({ lanes: [2, 4, 6], roles: ["chaser", "chaser", "shooter"] }),
+    Object.freeze({ lanes: [7, 0], roles: ["shooter", "chaser"] })
+  ]),
+  chapter_2: Object.freeze([
+    Object.freeze({ lanes: [0, 2, 5], roles: ["shooter", "chaser", "anchor"] }),
+    Object.freeze({ lanes: [1, 4, 7], roles: ["shooter", "chaser", "shooter"] }),
+    Object.freeze({ lanes: [3, 6], roles: ["anchor", "shooter"] }),
+    Object.freeze({ lanes: [0, 2, 4, 6], roles: ["chaser", "shooter", "chaser", "anchor"] })
+  ]),
+  chapter_3: Object.freeze([
+    Object.freeze({ lanes: [0, 1, 4], roles: ["berserker", "shooter", "anchor"] }),
+    Object.freeze({ lanes: [2, 3, 6], roles: ["berserker", "berserker", "shooter"] }),
+    Object.freeze({ lanes: [5, 7, 1, 3], roles: ["anchor", "berserker", "shooter", "berserker"] }),
+    Object.freeze({ lanes: [0, 2, 4, 6], roles: ["berserker", "shooter", "berserker", "anchor"] })
+  ])
+});
+
+const LANE_SPAWN_POINTS = Object.freeze([
+  Object.freeze({ x: 0.5, y: -0.02 }),
+  Object.freeze({ x: 1.02, y: 0.2 }),
+  Object.freeze({ x: 1.02, y: 0.5 }),
+  Object.freeze({ x: 1.02, y: 0.8 }),
+  Object.freeze({ x: 0.5, y: 1.02 }),
+  Object.freeze({ x: -0.02, y: 0.8 }),
+  Object.freeze({ x: -0.02, y: 0.5 }),
+  Object.freeze({ x: -0.02, y: 0.2 })
+]);
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -80,14 +149,16 @@ export class CanvasGame {
     this.playerImageUrl = "";
     this.hazardImage = null;
     this.hazardImageUrl = "";
+    this.chapterBackgroundUrls = [];
 
     this.player = null;
     this.hazards = [];
+    this.enemyProjectiles = [];
 
     this.paused = false;
     this.gameOver = false;
 
-    this.keys = { left: false, right: false, magnet: false };
+    this.keys = { left: false, right: false, forward: false, reverse: false, magnet: false };
     this.magnetPolarity = "neutral";
     this.magnetHeat = 0;
     this.magnetLocked = false;
@@ -109,6 +180,18 @@ export class CanvasGame {
     this.elapsed = 0;
     this.spawnTimer = 0;
     this.lastDamageAt = -999;
+    this.lastSpawnAt = 0;
+    this.wavePatternCursor = 0;
+    this.storyBeatCursor = 0;
+    this.chapterIndex = 0;
+    this.lastAnnouncedChapter = -1;
+    this.passiveHeatPerSecond = 0;
+    this.lastSpawnAt = 0;
+    this.wavePatternCursor = 0;
+    this.storyBeatCursor = 0;
+    this.chapterIndex = 0;
+    this.lastAnnouncedChapter = -1;
+    this.passiveHeatPerSecond = 0;
 
     this.miniboss = null;
     this.minibossSpawned = false;
@@ -147,10 +230,30 @@ export class CanvasGame {
       const key = event.key.toLowerCase();
       if (key === "arrowleft" || key === "a") {
         this.keys.left = true;
+        if (key === "arrowleft") {
+          event.preventDefault();
+        }
         return;
       }
       if (key === "arrowright" || key === "d") {
         this.keys.right = true;
+        if (key === "arrowright") {
+          event.preventDefault();
+        }
+        return;
+      }
+      if (key === "arrowup" || key === "w") {
+        this.keys.forward = true;
+        if (key === "arrowup") {
+          event.preventDefault();
+        }
+        return;
+      }
+      if (key === "arrowdown" || key === "s") {
+        this.keys.reverse = true;
+        if (key === "arrowdown") {
+          event.preventDefault();
+        }
         return;
       }
       if (event.code === "ShiftLeft" || event.code === "ShiftRight") {
@@ -173,6 +276,14 @@ export class CanvasGame {
       }
       if (key === "arrowright" || key === "d") {
         this.keys.right = false;
+        return;
+      }
+      if (key === "arrowup" || key === "w") {
+        this.keys.forward = false;
+        return;
+      }
+      if (key === "arrowdown" || key === "s") {
+        this.keys.reverse = false;
         return;
       }
       if (event.code === "Space") {
@@ -241,6 +352,20 @@ export class CanvasGame {
     const enemyArt = String(assets.enemyArt || backdropArt).trim();
     const playerArt = String(assets.playerArt || assets.titleArt || backdropArt).trim();
     const hazardArt = String(assets.enemyArt || assets.backdropArt || "").trim();
+    const gallery = Array.isArray(assets.gallery)
+      ? assets.gallery.map((item) => String(item || "").trim()).filter((item) => item.length > 0)
+      : [];
+
+    const deduped = [];
+    for (const candidate of [backdropArt, ...gallery]) {
+      if (!candidate) {
+        continue;
+      }
+      if (!deduped.includes(candidate)) {
+        deduped.push(candidate);
+      }
+    }
+    this.chapterBackgroundUrls = deduped.slice(0, 4);
 
     if (backdropArt !== this.backgroundImageUrl) {
       this.backgroundImageUrl = backdropArt;
@@ -261,6 +386,78 @@ export class CanvasGame {
       this.hazardImageUrl = hazardArt;
       this.hazardImage = this.loadVisualImage(hazardArt);
     }
+
+    this.applyChapterVisualTheme(this.chapterIndex, true);
+  }
+
+  getChapterByElapsed(seconds) {
+    const elapsed = Number(seconds) || 0;
+    for (let index = 0; index < STORY_CHAPTERS.length; index += 1) {
+      const chapter = STORY_CHAPTERS[index];
+      if (elapsed >= chapter.start && elapsed < chapter.end) {
+        return { chapter, index };
+      }
+    }
+    const fallbackIndex = STORY_CHAPTERS.length - 1;
+    return { chapter: STORY_CHAPTERS[fallbackIndex], index: fallbackIndex };
+  }
+
+  applyChapterVisualTheme(chapterIndex, force = false) {
+    if (!Array.isArray(this.chapterBackgroundUrls) || this.chapterBackgroundUrls.length === 0) {
+      return;
+    }
+
+    const normalized = Math.max(0, Number(chapterIndex) || 0);
+    const selected = this.chapterBackgroundUrls[normalized % this.chapterBackgroundUrls.length];
+    if (!selected) {
+      return;
+    }
+
+    if (!force && selected === this.backgroundImageUrl) {
+      return;
+    }
+
+    this.backgroundImageUrl = selected;
+    this.backgroundImage = this.loadVisualImage(selected);
+  }
+
+  pushToast(key, message, tone = "neutral") {
+    if (!this.runtime || typeof this.runtime.pushNarrativeToast !== "function") {
+      return;
+    }
+    this.runtime.pushNarrativeToast({ key, message, tone });
+  }
+
+  setObjective(message) {
+    if (!this.runtime || typeof this.runtime.setObjective !== "function") {
+      return;
+    }
+    this.runtime.setObjective(message);
+  }
+
+  updateStoryBeats() {
+    while (this.storyBeatCursor < STORY_BEATS.length) {
+      const beat = STORY_BEATS[this.storyBeatCursor];
+      if (this.elapsed < beat.at) {
+        break;
+      }
+
+      this.pushToast(beat.key, beat.message, beat.tone);
+      this.storyBeatCursor += 1;
+    }
+  }
+
+  updateChapterState() {
+    const state = this.getChapterByElapsed(this.elapsed);
+    if (state.index === this.chapterIndex && this.lastAnnouncedChapter === state.index) {
+      return;
+    }
+
+    this.chapterIndex = state.index;
+    this.lastAnnouncedChapter = state.index;
+    this.applyChapterVisualTheme(this.chapterIndex);
+    this.setObjective(`${state.chapter.label}: ${state.chapter.objective}`);
+    this.pushToast(`${state.chapter.id}_intro`, state.chapter.introToast, "warn");
   }
 
   init() {
@@ -270,12 +467,15 @@ export class CanvasGame {
     this.player.hp = profile.playerHp;
 
     this.hazards = [];
+    this.enemyProjectiles = [];
 
     this.paused = false;
     this.gameOver = false;
 
     this.keys.left = false;
     this.keys.right = false;
+    this.keys.forward = false;
+    this.keys.reverse = false;
     this.keys.magnet = false;
 
     this.magnetPolarity = "neutral";
@@ -317,6 +517,8 @@ export class CanvasGame {
     this.vfx.shockwaves = [];
 
     this.audio.enable();
+    this.applyChapterVisualTheme(0, true);
+    this.updateChapterState();
     this.syncRuntimeState();
   }
 
@@ -399,11 +601,14 @@ export class CanvasGame {
     }
 
     this.elapsed += dt;
+    this.updateChapterState();
+    this.updateStoryBeats();
 
     this.player.input = {
       left: this.keys.left,
       right: this.keys.right,
-      boost: false
+      boost: this.keys.forward,
+      reverse: this.keys.reverse
     };
     this.player.update(dt, this.canvas.width, this.canvas.height);
 
@@ -414,10 +619,13 @@ export class CanvasGame {
     if (canSimulate) {
       this.updateSpawns(dt);
       this.updateHazards(dt);
+      this.updateEnemyProjectiles(dt);
+      this.handleProjectileCollisions();
       this.handleHazardCollisions();
     }
 
     this.hazards = this.hazards.filter((hazard) => hazard.active);
+    this.enemyProjectiles = this.enemyProjectiles.filter((projectile) => projectile.active);
     this.updateWaveAndBossPhase();
     this.syncRuntimeState();
 
@@ -456,14 +664,18 @@ export class CanvasGame {
     if (!this.minibossSpawned && this.elapsed >= MINIBOSS_TIME) {
       this.minibossSpawned = true;
       this.miniboss = this.spawnSpecialHazard("miniboss");
+      this.miniboss.role = "warden";
       this.hazards.push(this.miniboss);
+      this.pushToast("warden_spawn", "ARC-12: Warden in lane. Break its guard with Surge.", "danger");
     }
 
     if (!this.bossSpawned && this.elapsed >= BOSS_TIME) {
       this.bossSpawned = true;
       this.boss = this.spawnSpecialHazard("boss");
+      this.boss.role = "tyrant";
       this.hazards.push(this.boss);
       this.audio.playCue("boss_spawn");
+      this.pushToast("tyrant_spawn", "Helios Net: Core Tyrant online. Pattern cycle engaged.", "danger");
     }
 
     if (!this.minibossDefeated && this.minibossSpawned && this.miniboss && !this.miniboss.active) {
@@ -481,61 +693,124 @@ export class CanvasGame {
     }
 
     const activeBasics = this.hazards.filter((hazard) => hazard.active && hazard.type === "basic").length;
-    const basicCap = this.difficulty === "insane" ? 22 : (this.difficulty === "casual" ? 14 : 18);
-    if (activeBasics >= basicCap) {
+    const chapter = this.getChapterByElapsed(this.elapsed).chapter;
+    const capByDifficulty = this.difficulty === "insane" ? 26 : (this.difficulty === "casual" ? 16 : 21);
+    if (activeBasics >= capByDifficulty) {
       this.spawnTimer = spawnInterval * 0.5;
       return;
     }
 
     this.spawnTimer = 0;
-    this.hazards.push(this.spawnBasicHazard());
+    const patterns = WAVE_PATTERNS[chapter.id] || WAVE_PATTERNS.chapter_1;
+    const pattern = patterns[this.wavePatternCursor % patterns.length];
+    this.wavePatternCursor += 1;
 
-    const extraChanceBase = this.elapsed >= 120 ? 0.35 : 0.15;
-    const extraChance = this.difficulty === "insane"
-      ? Math.min(0.65, extraChanceBase + 0.1)
-      : (this.difficulty === "casual" ? Math.max(0.05, extraChanceBase - 0.07) : extraChanceBase);
-    const extraCap = this.difficulty === "insane" ? 18 : (this.difficulty === "casual" ? 10 : 14);
-    if (activeBasics < extraCap && Math.random() < extraChance) {
-      this.hazards.push(this.spawnBasicHazard());
+    if (pattern) {
+      this.spawnPattern(pattern);
     }
+  }
+
+  spawnPattern(pattern) {
+    if (!pattern || !Array.isArray(pattern.roles) || pattern.roles.length === 0) {
+      return;
+    }
+
+    const pairCount = Math.min(pattern.roles.length, pattern.lanes.length);
+    for (let index = 0; index < pairCount; index += 1) {
+      const hazard = this.spawnBasicHazard(pattern.roles[index], pattern.lanes[index]);
+      if (!hazard) {
+        continue;
+      }
+      this.hazards.push(hazard);
+    }
+  }
+
+  configureHazardRole(hazard, role) {
+    const scoreScale = this.difficultyProfile ? this.difficultyProfile.scoreScale : 1;
+    const enemySpeedScale = this.difficultyProfile ? this.difficultyProfile.enemySpeedScale : 1;
+    const normalizedRole = String(role || "chaser");
+
+    hazard.role = normalizedRole;
+    hazard.roleState = {};
+
+    if (normalizedRole === "shooter") {
+      hazard.maxHp = 2;
+      hazard.hp = 2;
+      hazard.radius = 12;
+      hazard.scoreValue = Math.round(110 * scoreScale);
+      hazard.roleState.preferredDistance = 240;
+      hazard.roleState.nextShotAt = this.elapsed + 0.8 + Math.random() * 0.6;
+      hazard.roleState.shotCooldown = this.difficulty === "insane" ? 1.1 : 1.4;
+    } else if (normalizedRole === "anchor") {
+      hazard.maxHp = 3;
+      hazard.hp = 3;
+      hazard.radius = 15;
+      hazard.scoreValue = Math.round(150 * scoreScale);
+      hazard.roleState.auraRadius = 130;
+      hazard.roleState.pullForce = this.difficulty === "insane" ? 170 : 140;
+    } else if (normalizedRole === "berserker") {
+      hazard.maxHp = 2;
+      hazard.hp = 2;
+      hazard.radius = 11;
+      hazard.scoreValue = Math.round(130 * scoreScale);
+      hazard.roleState.nextDashAt = this.elapsed + 0.9 + Math.random() * 0.8;
+      hazard.roleState.dashCooldown = 1.8;
+      hazard.roleState.dashStrength = 210;
+    } else {
+      hazard.maxHp = 1;
+      hazard.hp = 1;
+      hazard.radius = 10;
+      hazard.scoreValue = Math.round(75 * scoreScale);
+    }
+
+    if (this.elapsed >= 120 && normalizedRole === "chaser") {
+      hazard.maxHp = 2;
+      hazard.hp = 2;
+      hazard.scoreValue = Math.round(95 * scoreScale);
+    }
+
+    const speedVector = Math.hypot(hazard.velocity.x, hazard.velocity.y) || 1;
+    const speedMultiplier = normalizedRole === "anchor"
+      ? 0.55
+      : (normalizedRole === "shooter" ? 0.82 : (normalizedRole === "berserker" ? 1.28 : 1.05));
+    const targetSpeed = speedVector * speedMultiplier * enemySpeedScale;
+    hazard.velocity.x = (hazard.velocity.x / speedVector) * targetSpeed;
+    hazard.velocity.y = (hazard.velocity.y / speedVector) * targetSpeed;
+  }
+
+  getLanePoint(laneIndex = null) {
+    if (Number.isFinite(laneIndex)) {
+      return LANE_SPAWN_POINTS[Math.abs(Math.floor(laneIndex)) % LANE_SPAWN_POINTS.length];
+    }
+    const index = Math.floor(Math.random() * LANE_SPAWN_POINTS.length);
+    return LANE_SPAWN_POINTS[index];
   }
 
   getSpawnInterval() {
     const scale = this.difficultyProfile ? this.difficultyProfile.spawnIntervalScale : 1;
-    let base = 1.25;
-    if (this.elapsed < 45) {
-      base = 1.25;
-    } else if (this.elapsed < 90) {
-      base = 1;
-    } else if (this.elapsed < 120) {
-      base = 0.9;
-    } else if (this.elapsed < 165) {
-      base = 0.75;
-    } else {
-      base = 0.68;
+    const chapter = this.getChapterByElapsed(this.elapsed).chapter.id;
+    let base = 1.2;
+    if (chapter === "chapter_2") {
+      base = 0.92;
+    } else if (chapter === "chapter_3") {
+      base = 0.72;
     }
-    return Math.max(0.32, base * scale);
+
+    if (this.surgeActive) {
+      base += 0.08;
+    }
+
+    return Math.max(0.28, base * scale);
   }
 
-  spawnBasicHazard() {
-    const margin = 30;
-    const side = Math.floor(Math.random() * 4);
-
-    let x = 0;
-    let y = 0;
-    if (side === 0) {
-      x = margin + Math.random() * (this.canvas.width - margin * 2);
-      y = -20;
-    } else if (side === 1) {
-      x = this.canvas.width + 20;
-      y = margin + Math.random() * (this.canvas.height - margin * 2);
-    } else if (side === 2) {
-      x = margin + Math.random() * (this.canvas.width - margin * 2);
-      y = this.canvas.height + 20;
-    } else {
-      x = -20;
-      y = margin + Math.random() * (this.canvas.height - margin * 2);
+  spawnBasicHazard(role = "chaser", laneIndex = null) {
+    if (!this.player) {
+      return null;
     }
+
+    const point = this.getLanePoint(laneIndex);
+    const x = point.x * this.canvas.width;
+    const y = point.y * this.canvas.height;
 
     const dx = this.player.position.x - x;
     const dy = this.player.position.y - y;
@@ -551,11 +826,7 @@ export class CanvasGame {
       "basic"
     );
 
-    if (this.elapsed >= 120) {
-      hazard.maxHp = 2;
-      hazard.hp = 2;
-      hazard.scoreValue = Math.round(80 * (this.difficultyProfile ? this.difficultyProfile.scoreScale : 1));
-    }
+    this.configureHazardRole(hazard, role);
 
     return hazard;
   }
@@ -595,11 +866,14 @@ export class CanvasGame {
   updateHazards(dt) {
     const magnetIsActive = this.isMagnetActive();
     const isAttract = this.magnetPolarity === "north";
+    this.passiveHeatPerSecond = 0;
 
     for (const hazard of this.hazards) {
       if (!hazard.active) {
         continue;
       }
+
+      this.applyHazardRoleBehavior(hazard, dt);
 
       if (magnetIsActive) {
         const dx = this.player.position.x - hazard.position.x;
@@ -617,7 +891,9 @@ export class CanvasGame {
         }
       }
 
-      const maxSpeed = hazard.type === "boss" ? 180 : 150;
+      const maxSpeed = hazard.type === "boss"
+        ? 190
+        : (hazard.role === "berserker" ? 220 : (hazard.role === "anchor" ? 120 : 165));
       const speed = Math.hypot(hazard.velocity.x, hazard.velocity.y);
       if (speed > maxSpeed) {
         const ratio = maxSpeed / speed;
@@ -626,6 +902,155 @@ export class CanvasGame {
       }
 
       hazard.update(dt, this.canvas.width, this.canvas.height);
+    }
+
+    if (!this.magnetLocked && this.passiveHeatPerSecond > 0) {
+      this.magnetHeat = clamp(this.magnetHeat + this.passiveHeatPerSecond * dt, 0, 100);
+    }
+  }
+
+  applyHazardRoleBehavior(hazard, dt) {
+    if (!hazard || !hazard.active || !hazard.role) {
+      return;
+    }
+
+    const dx = this.player.position.x - hazard.position.x;
+    const dy = this.player.position.y - hazard.position.y;
+    const distance = Math.hypot(dx, dy) || 1;
+    const nx = dx / distance;
+    const ny = dy / distance;
+
+    if (hazard.role === "shooter") {
+      const desired = hazard.roleState?.preferredDistance || 240;
+      const correction = distance > desired ? 50 : -42;
+      hazard.velocity.x += nx * correction * dt;
+      hazard.velocity.y += ny * correction * dt;
+
+      const nextShotAt = hazard.roleState?.nextShotAt || 0;
+      if (this.elapsed >= nextShotAt) {
+        this.spawnEnemyProjectile(hazard);
+        const cooldown = hazard.roleState?.shotCooldown || 1.4;
+        hazard.roleState.nextShotAt = this.elapsed + cooldown + Math.random() * 0.35;
+      }
+      return;
+    }
+
+    if (hazard.role === "anchor") {
+      const pullForce = hazard.roleState?.pullForce || 140;
+      const auraRadius = hazard.roleState?.auraRadius || 130;
+      if (distance <= auraRadius) {
+        this.player.velocity.x -= nx * pullForce * dt * 0.45;
+        this.player.velocity.y -= ny * pullForce * dt * 0.45;
+        this.passiveHeatPerSecond += 14;
+      }
+      hazard.velocity.x += nx * 20 * dt;
+      hazard.velocity.y += ny * 20 * dt;
+      return;
+    }
+
+    if (hazard.role === "berserker") {
+      const nextDashAt = hazard.roleState?.nextDashAt || 0;
+      if (this.elapsed >= nextDashAt) {
+        const strength = hazard.roleState?.dashStrength || 210;
+        hazard.velocity.x += nx * strength;
+        hazard.velocity.y += ny * strength;
+        hazard.roleState.nextDashAt = this.elapsed + (hazard.roleState?.dashCooldown || 1.8);
+      } else {
+        hazard.velocity.x += nx * 58 * dt;
+        hazard.velocity.y += ny * 58 * dt;
+      }
+      return;
+    }
+
+    if (hazard.role === "warden" || hazard.role === "tyrant") {
+      const pulseStrength = hazard.role === "tyrant" ? 52 : 34;
+      hazard.velocity.x += nx * pulseStrength * dt;
+      hazard.velocity.y += ny * pulseStrength * dt;
+      if (distance <= 170) {
+        this.passiveHeatPerSecond += hazard.role === "tyrant" ? 12 : 8;
+      }
+      return;
+    }
+
+    // default chaser behavior
+    hazard.velocity.x += nx * 52 * dt;
+    hazard.velocity.y += ny * 52 * dt;
+  }
+
+  spawnEnemyProjectile(hazard) {
+    if (!hazard || !hazard.active) {
+      return;
+    }
+
+    const dx = this.player.position.x - hazard.position.x;
+    const dy = this.player.position.y - hazard.position.y;
+    const distance = Math.hypot(dx, dy) || 1;
+    const speed = this.difficulty === "insane" ? 230 : 200;
+
+    this.enemyProjectiles.push({
+      position: { x: hazard.position.x, y: hazard.position.y },
+      velocity: { x: (dx / distance) * speed, y: (dy / distance) * speed },
+      radius: 4,
+      ttl: 2.4,
+      active: true
+    });
+    this.audio.playCue("shoot");
+  }
+
+  updateEnemyProjectiles(dt) {
+    for (const projectile of this.enemyProjectiles) {
+      if (!projectile.active) {
+        continue;
+      }
+
+      projectile.ttl -= dt;
+      projectile.position.x += projectile.velocity.x * dt;
+      projectile.position.y += projectile.velocity.y * dt;
+
+      if (
+        projectile.ttl <= 0 ||
+        projectile.position.x < -24 ||
+        projectile.position.x > this.canvas.width + 24 ||
+        projectile.position.y < -24 ||
+        projectile.position.y > this.canvas.height + 24
+      ) {
+        projectile.active = false;
+      }
+    }
+  }
+
+  handleProjectileCollisions() {
+    if (!this.player) {
+      return;
+    }
+
+    const repelActive = this.isMagnetActive() && this.magnetPolarity === "south";
+    for (const projectile of this.enemyProjectiles) {
+      if (!projectile.active) {
+        continue;
+      }
+
+      const dx = projectile.position.x - this.player.position.x;
+      const dy = projectile.position.y - this.player.position.y;
+      const distance = Math.hypot(dx, dy) || 1;
+      if (distance > this.player.radius + projectile.radius) {
+        continue;
+      }
+
+      if (this.surgeActive || repelActive) {
+        projectile.active = false;
+        const reward = this.surgeActive ? 24 : 12;
+        this.score += reward;
+        if (typeof this.runtime.addScore === "function") {
+          this.runtime.addScore(reward);
+        }
+        this.vfx.spawnParticles(projectile.position.x, projectile.position.y, 5, "#65e0ff", 90);
+        this.audio.playCue("hit");
+        continue;
+      }
+
+      projectile.active = false;
+      this.damagePlayer(this.elapsed);
     }
   }
 
@@ -672,6 +1097,17 @@ export class CanvasGame {
         const knockback = surgeImpact ? 180 : 110;
         hazard.velocity.x += (knockX / length) * knockback;
         hazard.velocity.y += (knockY / length) * knockback;
+        continue;
+      }
+
+      if (magnetIsActive && this.magnetPolarity === "south") {
+        const knockX = (hazard.position.x - this.player.position.x) || 1;
+        const knockY = (hazard.position.y - this.player.position.y) || 1;
+        const length = Math.hypot(knockX, knockY) || 1;
+        hazard.velocity.x += (knockX / length) * 180;
+        hazard.velocity.y += (knockY / length) * 180;
+        this.vfx.spawnParticles(hazard.position.x, hazard.position.y, 6, "#65e0ff", 80);
+        this.audio.playCue("shoot");
         continue;
       }
 
@@ -825,16 +1261,17 @@ export class CanvasGame {
       return;
     }
 
-    if (this.elapsed < 45) {
-      this.waveLabel = "1";
-    } else if (this.elapsed < 90) {
-      this.waveLabel = "2";
-    } else if (this.elapsed < 120) {
-      this.waveLabel = "3";
-    } else if (this.elapsed < 165) {
-      this.waveLabel = "4";
+    const chapter = this.getChapterByElapsed(this.elapsed).chapter.id;
+    const shooters = this.hazards.filter((hazard) => hazard.active && hazard.role === "shooter").length;
+    const anchors = this.hazards.filter((hazard) => hazard.active && hazard.role === "anchor").length;
+    const berserkers = this.hazards.filter((hazard) => hazard.active && hazard.role === "berserker").length;
+
+    if (chapter === "chapter_1") {
+      this.waveLabel = `A-${Math.min(4, Math.max(1, Math.floor(this.elapsed / 14) + 1))}`;
+    } else if (chapter === "chapter_2") {
+      this.waveLabel = `B S${shooters}/A${anchors}`;
     } else {
-      this.waveLabel = "BOSS";
+      this.waveLabel = `C B${berserkers}/S${shooters}`;
     }
   }
 
@@ -855,6 +1292,7 @@ export class CanvasGame {
       hp: this.player ? this.player.hp : 0,
       score: Math.round(this.score),
       wave: this.waveLabel,
+      chapter: STORY_CHAPTERS[this.chapterIndex]?.label || "",
       overheat: this.magnetHeat,
       overheatPercent: Math.round(this.magnetHeat),
       polarity: this.magnetPolarity,
@@ -901,6 +1339,7 @@ export class CanvasGame {
     const shakeOffset = this.vfx.getShakeOffset();
     this.vfx.drawBackground(this.ctx, shakeOffset);
     this.drawBackdropImage(shakeOffset);
+    this.drawLaneGuides(shakeOffset);
 
     this.drawMagnetAura(shakeOffset);
     this.drawSurgeAura(shakeOffset);
@@ -908,6 +1347,7 @@ export class CanvasGame {
     for (const hazard of this.hazards) {
       hazard.draw(this.ctx, shakeOffset);
     }
+    this.drawEnemyProjectiles(shakeOffset);
     this.drawHazardSkinOverlay(shakeOffset);
 
     this.player.draw(this.ctx, shakeOffset);
@@ -926,6 +1366,26 @@ export class CanvasGame {
       this.ctx.font = "14px sans-serif";
       this.ctx.fillText("Press P to resume", this.canvas.width / 2, this.canvas.height / 2 + 28);
     }
+  }
+
+  drawLaneGuides(shakeOffset) {
+    const chapter = STORY_CHAPTERS[this.chapterIndex]?.id || "chapter_1";
+    const centerX = this.canvas.width * 0.5 + shakeOffset.x * 0.2;
+    const centerY = this.canvas.height * 0.5 + shakeOffset.y * 0.2;
+    const color = chapter === "chapter_3" ? "rgba(255,95,109,0.18)" : (chapter === "chapter_2" ? "rgba(246,187,60,0.16)" : "rgba(101,224,255,0.14)");
+
+    this.ctx.save();
+    this.ctx.strokeStyle = color;
+    this.ctx.lineWidth = 1.4;
+    this.ctx.setLineDash([8, 9]);
+    for (let ring = 0; ring < 3; ring += 1) {
+      const radius = 92 + ring * 66;
+      this.ctx.beginPath();
+      this.ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      this.ctx.stroke();
+    }
+    this.ctx.setLineDash([]);
+    this.ctx.restore();
   }
 
   drawMagnetAura(shakeOffset) {
@@ -969,6 +1429,31 @@ export class CanvasGame {
       Math.PI * 2
     );
     this.ctx.stroke();
+    this.ctx.restore();
+  }
+
+  drawEnemyProjectiles(shakeOffset) {
+    if (!Array.isArray(this.enemyProjectiles) || this.enemyProjectiles.length === 0) {
+      return;
+    }
+
+    this.ctx.save();
+    for (const projectile of this.enemyProjectiles) {
+      if (!projectile.active) {
+        continue;
+      }
+
+      const x = projectile.position.x + shakeOffset.x;
+      const y = projectile.position.y + shakeOffset.y;
+      this.ctx.fillStyle = "#f6bb3c";
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, projectile.radius, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.fillStyle = "rgba(246, 187, 60, 0.35)";
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, projectile.radius * 2.5, 0, Math.PI * 2);
+      this.ctx.fill();
+    }
     this.ctx.restore();
   }
 
