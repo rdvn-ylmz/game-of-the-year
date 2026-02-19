@@ -1,57 +1,66 @@
 export const UI_COPY = Object.freeze({
-  missionFraming: "Blackout wave inbound. Stay mobile.",
-  runStart: "Run live. Build a clean route.",
-  objective: "Collect 6 energy cells to unlock extraction.",
-  damage: "Integrity hit. Multiplier reset.",
-  phaseMid: "Grid surge. Patrol traffic increasing.",
-  extractionUnlocked: "Quota met. Extraction is now active.",
-  lowTime: "Thirty seconds. Commit to extraction now.",
-  movementHint: "Move: WASD / Arrow Keys",
-  dashHint: "Space - Short burst, then cooldown",
-  endWinTitle: "Delivery complete. Last light preserved.",
-  endWinBody: "Extraction secured. Sector pulse restored.",
-  endFailTitle: "Mission failed. Re-run and reroute.",
-  endFailBody: "Courier signal lost. Sector offline."
+  missionFraming: "Orbit is dirty. Shift starts now.",
+  runStart: "Run live. Build a safe first route.",
+  objective: "Vacuum junk and deposit at recycler for score.",
+  damage: "Hull hit. Stability reduced.",
+  phaseTwo: "Meteor lanes tightening. Keep deposits steady.",
+  phaseThree: "Solar pulse cadence rising. Bank often.",
+  comboGainTemplate: "Chain held. Combo now {combo}x.",
+  comboTimeout: "Combo fading. Deposit now.",
+  comboCapTemplate: "Combo capped at {combo_cap}x. Cash it in.",
+  comboReset: "Combo reset to 1.0x. Rebuild the chain.",
+  orbitHint: "Left/Right to orbit the planet",
+  boostHint: "Space: short burst, then cooldown",
+  carryHint: "More junk carried means slower turning",
+  depositHint: "Press E in recycler zone to bank points",
+  depositEmpty: "No scrap in hold to deposit.",
+  endTimerTitle: "Shift Complete",
+  endTimerBody: "Final score locked. Recycler cycle closed.",
+  endKoTitle: "Hull Failure",
+  endKoBody: "Recovery tug inbound. Run terminated.",
+  pbBadge: "New Personal Best",
+  pbBody: "Clean orbit, cleaner record."
 });
 
 const FAIL_TIPS = Object.freeze({
   integrity: [
-    "Tip: Dash through laser off-window.",
-    "Tip: Avoid drone overlap before committing lanes."
+    "Tip: Bank before crossing hazard lanes with heavy carry.",
+    "Tip: Boost after telegraph, not into it."
   ],
   timer: [
-    "Tip: Turn to extraction as soon as quota is met.",
-    "Tip: Keep one route open for the final 30 seconds."
+    "Tip: Deposit earlier when carry slows your turn speed.",
+    "Tip: Keep combo alive, but avoid greedy late-run routes."
   ]
 });
 
 const DEFAULT_CONFIG = Object.freeze({
   runDurationSeconds: 360,
-  requiredCells: 6,
   integrity: 3,
-  phaseMidSecond: 121,
-  lowTimeThresholdSeconds: 30,
+  phaseTwoSecond: 121,
+  phaseThreeSecond: 241,
   runStartToastDelaySeconds: 2,
-  movementPromptDelaySeconds: 3,
-  dashPromptDelaySeconds: 8,
-  multiplierStart: 1.0,
-  multiplierStep: 0.1,
-  multiplierMax: 2.0,
-  multiplierGainIntervalSeconds: 10,
-  cellScore: 100,
-  survivalScorePerSecond: 5
+  orbitPromptDelaySeconds: 3,
+  boostPromptDelaySeconds: 8,
+  comboStart: 1.0,
+  comboStep: 0.2,
+  comboCap: 2.0,
+  comboTimeoutSeconds: 8,
+  comboWarningThresholdSeconds: 2,
+  scrapValue: 60
 });
 
 function roundOne(value) {
   return Math.round(value * 10) / 10;
 }
 
+function formatOneDecimal(value) {
+  return roundOne(value).toFixed(1);
+}
+
 export class GameRuntime {
   constructor(config = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this._events = [];
-    this._survivalAccumulator = 0;
-    this._multiplierAccumulator = 0;
     this._failTipCursor = { integrity: 0, timer: 0 };
     this.state = this._createBaseState();
   }
@@ -59,21 +68,27 @@ export class GameRuntime {
   _createBaseState() {
     return {
       status: "idle",
+      paused: false,
       firstRun: false,
       elapsed: 0,
       timeLeft: this.config.runDurationSeconds,
       hp: this.config.integrity,
-      cells: 0,
-      extractionUnlocked: false,
+      carryCount: 0,
+      carryValue: 0,
       score: 0,
-      multiplier: this.config.multiplierStart,
+      combo: this.config.comboStart,
+      comboWindowRemaining: 0,
+      comboWarningFired: false,
+      comboCapFired: false,
       moved: false,
-      dashed: false,
-      movementPromptShown: false,
-      dashPromptShown: false,
+      boosted: false,
+      orbitPromptShown: false,
+      boostPromptShown: false,
       runStartToastFired: false,
-      phaseMidFired: false,
-      lowTimeFired: false,
+      phaseTwoFired: false,
+      phaseThreeFired: false,
+      carryHintShown: false,
+      depositHintShown: false,
       failReason: null,
       overlayKey: null
     };
@@ -83,8 +98,6 @@ export class GameRuntime {
     this.state = this._createBaseState();
     this.state.status = "running";
     this.state.firstRun = Boolean(firstRun);
-    this._survivalAccumulator = 0;
-    this._multiplierAccumulator = 0;
 
     this._emit({
       type: "objective",
@@ -98,11 +111,21 @@ export class GameRuntime {
     return this.state.status === "running";
   }
 
+  isPaused() {
+    return this.state.paused === true;
+  }
+
+  setPaused(paused) {
+    this.state.paused = Boolean(paused) && this.isRunning();
+    return this.state.paused;
+  }
+
   getSnapshot() {
     return {
       ...this.state,
-      requiredCells: this.config.requiredCells,
       timeLeftRounded: Math.max(0, Math.ceil(this.state.timeLeft)),
+      comboText: formatOneDecimal(this.state.combo),
+      comboWindowText: formatOneDecimal(this.state.comboWindowRemaining),
       scoreRounded: Math.round(this.state.score)
     };
   }
@@ -113,77 +136,143 @@ export class GameRuntime {
     return pending;
   }
 
+  _canProcessActions() {
+    return this.isRunning() && !this.isPaused();
+  }
+
   registerMovement() {
-    if (!this.isRunning()) {
+    if (!this._canProcessActions()) {
       return;
     }
+
     this.state.moved = true;
-    if (
-      this.state.overlayKey === "mission_intro" ||
-      this.state.overlayKey === "movement_prompt"
-    ) {
+    if (this.state.overlayKey === "mission_intro" || this.state.overlayKey === "orbit_prompt") {
       this._hideOverlay();
     }
     this._emitRunStartToastOnce();
   }
 
-  useDash() {
-    if (!this.isRunning()) {
+  useBoost() {
+    if (!this._canProcessActions()) {
       return;
     }
-    this.state.dashed = true;
-    if (this.state.overlayKey === "dash_prompt") {
+
+    this.state.boosted = true;
+    if (this.state.overlayKey === "boost_prompt") {
       this._hideOverlay();
     }
   }
 
-  collectCell() {
-    if (!this.isRunning() || this.state.cells >= this.config.requiredCells) {
+  collectScrap({ value = this.config.scrapValue } = {}) {
+    if (!this._canProcessActions()) {
       return;
     }
 
-    this.state.cells += 1;
-    this.state.score += this.config.cellScore * this.state.multiplier;
+    this.state.carryCount += 1;
+    this.state.carryValue += Math.max(1, Number(value) || this.config.scrapValue);
 
     this._emit({
-      type: "objective_update",
-      key: "cells",
-      current: this.state.cells,
-      total: this.config.requiredCells
+      type: "carry_update",
+      key: "carry_update",
+      carryCount: this.state.carryCount
     });
 
-    if (this.state.cells === 1) {
+    if (!this.state.carryHintShown) {
+      this.state.carryHintShown = true;
       this._emit({
         type: "toast",
-        key: "first_cell",
-        message: `Cells collected: ${this.state.cells}/${this.config.requiredCells}`,
+        key: "carry_hint",
+        message: UI_COPY.carryHint,
         tone: "neutral"
-      });
-    }
-
-    if (this.state.cells >= this.config.requiredCells && !this.state.extractionUnlocked) {
-      this.state.extractionUnlocked = true;
-      this._emit({
-        type: "toast",
-        key: "extraction_unlocked",
-        message: UI_COPY.extractionUnlocked,
-        tone: "good"
       });
       this._emit({
         type: "feedback",
-        key: "extraction_pulse"
+        key: "carry_pulse"
       });
     }
   }
 
+  depositCarry() {
+    if (!this._canProcessActions()) {
+      return;
+    }
+
+    if (this.state.carryCount <= 0) {
+      this._emit({
+        type: "toast",
+        key: "deposit_empty",
+        message: UI_COPY.depositEmpty,
+        tone: "warn"
+      });
+      return;
+    }
+
+    const depositPoints = Math.round(this.state.carryValue * this.state.combo);
+    this.state.score += depositPoints;
+    this.state.carryCount = 0;
+    this.state.carryValue = 0;
+
+    if (!this.state.depositHintShown) {
+      this.state.depositHintShown = true;
+      this._emit({
+        type: "toast",
+        key: "deposit_hint",
+        message: UI_COPY.depositHint,
+        tone: "neutral"
+      });
+    }
+
+    const wasChainActive = this.state.comboWindowRemaining > 0;
+    const previousCombo = this.state.combo;
+
+    if (wasChainActive) {
+      this.state.combo = Math.min(
+        this.config.comboCap,
+        roundOne(this.state.combo + this.config.comboStep)
+      );
+    }
+
+    this.state.comboWindowRemaining = this.config.comboTimeoutSeconds;
+    this.state.comboWarningFired = false;
+
+    if (wasChainActive) {
+      if (
+        !this.state.comboCapFired &&
+        previousCombo < this.config.comboCap &&
+        this.state.combo >= this.config.comboCap
+      ) {
+        this.state.comboCapFired = true;
+        this._emit({
+          type: "toast",
+          key: "combo_cap",
+          message: UI_COPY.comboCapTemplate,
+          values: { combo_cap: formatOneDecimal(this.config.comboCap) },
+          tone: "warn"
+        });
+      } else {
+        this._emit({
+          type: "toast",
+          key: "combo_gain",
+          message: UI_COPY.comboGainTemplate,
+          values: { combo: formatOneDecimal(this.state.combo) },
+          tone: "good"
+        });
+      }
+    }
+
+    this._emit({
+      type: "feedback",
+      key: "deposit"
+    });
+  }
+
   takeDamage() {
-    if (!this.isRunning()) {
+    if (!this._canProcessActions()) {
       return;
     }
 
     this.state.hp = Math.max(0, this.state.hp - 1);
-    this.state.multiplier = this.config.multiplierStart;
-    this._multiplierAccumulator = 0;
+    this._resetCombo({ reason: "damage" });
 
     this._emit({
       type: "toast",
@@ -197,19 +286,28 @@ export class GameRuntime {
     });
 
     if (this.state.hp <= 0) {
-      this._finishRun({ win: false, reason: "integrity" });
+      this._finishRun({ reason: "integrity" });
     }
   }
 
-  attemptExtraction() {
-    if (!this.isRunning() || !this.state.extractionUnlocked) {
+  syncPlayerState({ hp, carryCount, carryValue = 0 }) {
+    if (!this._canProcessActions()) {
       return;
     }
-    this._finishRun({ win: true, reason: null });
+    this.state.hp = Math.max(0, Number.isFinite(hp) ? hp : this.state.hp);
+    this.state.carryCount = Number.isFinite(carryCount) ? carryCount : this.state.carryCount;
+    this.state.carryValue = Number.isFinite(carryValue) ? carryValue : this.state.carryValue;
+  }
+
+  endRunFromGameOver() {
+    if (!this.isRunning()) {
+      return;
+    }
+    this._finishRun({ reason: "integrity" });
   }
 
   tick(deltaSeconds) {
-    if (!this.isRunning()) {
+    if (!this._canProcessActions()) {
       return;
     }
 
@@ -222,51 +320,55 @@ export class GameRuntime {
     this.state.elapsed += delta;
     this.state.timeLeft = Math.max(0, this.config.runDurationSeconds - this.state.elapsed);
 
-    this._survivalAccumulator += delta;
-    while (this._survivalAccumulator >= 1) {
-      this.state.score += this.config.survivalScorePerSecond;
-      this._survivalAccumulator -= 1;
+    if (
+      !this.state.phaseTwoFired &&
+      previousElapsed < this.config.phaseTwoSecond &&
+      this.state.elapsed >= this.config.phaseTwoSecond
+    ) {
+      this.state.phaseTwoFired = true;
+      this._emit({
+        type: "toast",
+        key: "phase_two",
+        message: UI_COPY.phaseTwo,
+        tone: "warn"
+      });
     }
 
-    this._multiplierAccumulator += delta;
-    while (this._multiplierAccumulator >= this.config.multiplierGainIntervalSeconds) {
-      if (this.state.multiplier < this.config.multiplierMax) {
-        this.state.multiplier = Math.min(
-          this.config.multiplierMax,
-          roundOne(this.state.multiplier + this.config.multiplierStep)
-        );
+    if (
+      !this.state.phaseThreeFired &&
+      previousElapsed < this.config.phaseThreeSecond &&
+      this.state.elapsed >= this.config.phaseThreeSecond
+    ) {
+      this.state.phaseThreeFired = true;
+      this._emit({
+        type: "toast",
+        key: "phase_three",
+        message: UI_COPY.phaseThree,
+        tone: "warn"
+      });
+    }
+
+    if (this.state.comboWindowRemaining > 0) {
+      const previousComboWindow = this.state.comboWindowRemaining;
+      this.state.comboWindowRemaining = Math.max(0, previousComboWindow - delta);
+
+      if (
+        !this.state.comboWarningFired &&
+        this.state.comboWindowRemaining > 0 &&
+        this.state.comboWindowRemaining <= this.config.comboWarningThresholdSeconds
+      ) {
+        this.state.comboWarningFired = true;
         this._emit({
-          type: "feedback",
-          key: "multiplier_up"
+          type: "toast",
+          key: "combo_timeout",
+          message: UI_COPY.comboTimeout,
+          tone: "warn"
         });
       }
-      this._multiplierAccumulator -= this.config.multiplierGainIntervalSeconds;
-    }
 
-    if (!this.state.phaseMidFired &&
-      previousElapsed < this.config.phaseMidSecond &&
-      this.state.elapsed >= this.config.phaseMidSecond) {
-      this.state.phaseMidFired = true;
-      this._emit({
-        type: "toast",
-        key: "phase_mid",
-        message: UI_COPY.phaseMid,
-        tone: "warn"
-      });
-    }
-
-    if (!this.state.lowTimeFired && this.state.timeLeft < this.config.lowTimeThresholdSeconds) {
-      this.state.lowTimeFired = true;
-      this._emit({
-        type: "toast",
-        key: "low_time",
-        message: UI_COPY.lowTime,
-        tone: "warn"
-      });
-      this._emit({
-        type: "feedback",
-        key: "timer_low"
-      });
+      if (previousComboWindow > 0 && this.state.comboWindowRemaining === 0) {
+        this._resetCombo({ reason: "timeout" });
+      }
     }
 
     if (
@@ -276,25 +378,28 @@ export class GameRuntime {
       this._emitRunStartToastOnce();
     }
 
-    if (this.state.firstRun &&
+    if (
+      this.state.firstRun &&
       !this.state.moved &&
-      !this.state.movementPromptShown &&
-      this.state.elapsed >= this.config.movementPromptDelaySeconds) {
-      this.state.movementPromptShown = true;
-      this._showOverlay("movement_prompt", UI_COPY.movementHint);
+      !this.state.orbitPromptShown &&
+      this.state.elapsed >= this.config.orbitPromptDelaySeconds
+    ) {
+      this.state.orbitPromptShown = true;
+      this._showOverlay("orbit_prompt", UI_COPY.orbitHint);
     }
 
-    if (this.state.firstRun &&
-      this.state.moved &&
-      !this.state.dashed &&
-      !this.state.dashPromptShown &&
-      this.state.elapsed >= this.config.dashPromptDelaySeconds) {
-      this.state.dashPromptShown = true;
-      this._showOverlay("dash_prompt", UI_COPY.dashHint);
+    if (
+      this.state.firstRun &&
+      !this.state.boosted &&
+      !this.state.boostPromptShown &&
+      this.state.elapsed >= this.config.boostPromptDelaySeconds
+    ) {
+      this.state.boostPromptShown = true;
+      this._showOverlay("boost_prompt", UI_COPY.boostHint);
     }
 
     if (this.state.timeLeft <= 0) {
-      this._finishRun({ win: false, reason: "timer" });
+      this._finishRun({ reason: "timer" });
     }
   }
 
@@ -309,8 +414,25 @@ export class GameRuntime {
       message: UI_COPY.runStart,
       tone: "neutral"
     });
+
     if (this.state.overlayKey === "mission_intro") {
       this._hideOverlay();
+    }
+  }
+
+  _resetCombo({ reason }) {
+    const hadCombo = this.state.combo > this.config.comboStart || this.state.comboWindowRemaining > 0;
+    this.state.combo = this.config.comboStart;
+    this.state.comboWindowRemaining = 0;
+    this.state.comboWarningFired = false;
+
+    if (hadCombo) {
+      this._emit({
+        type: "toast",
+        key: "combo_reset",
+        message: UI_COPY.comboReset,
+        tone: reason === "damage" ? "warn" : "neutral"
+      });
     }
   }
 
@@ -345,27 +467,30 @@ export class GameRuntime {
     return pool[index];
   }
 
-  _finishRun({ win, reason }) {
+  _finishRun({ reason }) {
     if (!this.isRunning()) {
       return;
     }
 
-    this.state.status = win ? "won" : "lost";
+    const timerComplete = reason === "timer";
+    this.state.status = timerComplete ? "completed" : "lost";
+    this.state.paused = false;
     this.state.failReason = reason;
     this._hideOverlay();
 
     this._emit({
       type: "end",
-      outcome: win ? "win" : "fail",
-      title: win ? UI_COPY.endWinTitle : UI_COPY.endFailTitle,
-      body: win ? UI_COPY.endWinBody : UI_COPY.endFailBody,
-      primaryAction: "Restart",
+      outcome: timerComplete ? "timer_complete" : "ko",
+      title: timerComplete ? UI_COPY.endTimerTitle : UI_COPY.endKoTitle,
+      body: timerComplete ? UI_COPY.endTimerBody : UI_COPY.endKoBody,
+      primaryAction: "Restart Shift",
       secondaryAction: "Quit to Title",
-      tip: win ? "" : this._nextFailTip(reason),
+      tip: timerComplete ? this._nextFailTip("timer") : this._nextFailTip("integrity"),
+      pbBadge: UI_COPY.pbBadge,
+      pbBody: UI_COPY.pbBody,
       stats: {
         finalScore: Math.round(this.state.score),
-        cellsCollected: this.state.cells,
-        requiredCells: this.config.requiredCells,
+        carryCount: this.state.carryCount,
         survivedSeconds: Math.floor(this.state.elapsed)
       }
     });

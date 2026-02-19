@@ -1,10 +1,16 @@
 const DEFAULT_PRIORITY = Object.freeze({
-  end_fail: 500,
-  end_win: 500,
-  extraction_unlocked: 400,
-  low_time: 300,
-  damage: 200,
-  phase_mid: 100
+  end_critical: 600,
+  damage: 500,
+  phase_two: 400,
+  phase_three: 400,
+  combo_timeout: 300,
+  combo_cap: 200,
+  combo_gain: 100,
+  combo_reset: 90
+});
+
+const DEFAULT_DEBOUNCE_BY_KEY_MS = Object.freeze({
+  combo_gain: 900
 });
 
 export function priorityForToastKey(key) {
@@ -15,24 +21,35 @@ export class ToastQueue {
   constructor({
     minGapMs = 1200,
     durationMs = 2200,
-    priorityForKey = priorityForToastKey
+    priorityForKey = priorityForToastKey,
+    debounceByKeyMs = DEFAULT_DEBOUNCE_BY_KEY_MS
   } = {}) {
     this.minGapMs = minGapMs;
     this.durationMs = durationMs;
     this.priorityForKey = priorityForKey;
+    this.debounceByKeyMs = debounceByKeyMs;
     this._queue = [];
     this._active = null;
     this._nextEligibleAt = 0;
+    this._lastEnqueueAtByKey = {};
     this._seq = 0;
   }
 
-  enqueue(toast) {
+  enqueue(toast, nowMs = 0) {
+    const debounceMs = this.debounceByKeyMs[toast.key] ?? 0;
+    const lastEnqueueAt = this._lastEnqueueAtByKey[toast.key] ?? -Infinity;
+    if (debounceMs > 0 && nowMs - lastEnqueueAt < debounceMs) {
+      return false;
+    }
+
+    this._lastEnqueueAtByKey[toast.key] = nowMs;
     const normalized = {
       ...toast,
       _seq: this._seq,
       _priority: this.priorityForKey(toast.key)
     };
     this._seq += 1;
+
     this._queue.push(normalized);
     this._queue.sort((left, right) => {
       if (right._priority !== left._priority) {
@@ -40,6 +57,7 @@ export class ToastQueue {
       }
       return left._seq - right._seq;
     });
+    return true;
   }
 
   tick(nowMs) {
@@ -55,6 +73,7 @@ export class ToastQueue {
       this._active = {
         key: next.key,
         message: next.message,
+        values: next.values ?? null,
         tone: next.tone,
         hideAt: nowMs + this.durationMs
       };
@@ -72,5 +91,6 @@ export class ToastQueue {
     this._queue = [];
     this._active = null;
     this._nextEligibleAt = 0;
+    this._lastEnqueueAtByKey = {};
   }
 }

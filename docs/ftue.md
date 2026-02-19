@@ -1,9 +1,9 @@
-# FTUE - Last Light Courier (MVP)
+# FTUE - Pocket Planet Janitor (MVP)
 
 ## TASK META
-- task_id: TASK-0015
+- task_id: TASK-0039
 - owner: player_experience
-- pipeline_id: PIPE-0002
+- pipeline_id: PIPE-0004
 - stage: 4/10
 
 ## ACCEPTANCE CRITERIA
@@ -13,28 +13,30 @@
 ## FTUE (Onboarding)
 | Step | Trigger | Player sees | Player does | Success |
 |---|---|---|---|---|
-| 1. Mission framing | Run start (t=0) | Overlay: `Blackout wave inbound. Stay mobile.` + objective strip `Collect 6 energy cells to unlock extraction.` | Begins navigating toward cells | Player movement input within 5s |
-| 2. Movement prompt | No movement for 3s | Hint: `Move: WASD / Arrow Keys` | Moves in any direction | Hint dismisses and stays hidden for current run |
-| 3. Dash prompt | No dash used by 8s | Hint: `Space - Short burst, then cooldown` | Uses dash once | Dash hint completion flag set |
-| 4. Run cadence intro | After first movement OR 2s timeout | Toast: `Run live. Build a clean route.` | Continues route planning | Player collects first cell within 20s target |
-| 5. Damage learning | First integrity loss in run | Flash + toast `Integrity hit. Multiplier reset.` | Avoids immediate repeat damage | No second hit during next 5s window |
-| 6. Mid-phase pressure | Timer crosses 121s | One-shot warning: `Grid surge. Patrol traffic increasing.` | Adjusts route to avoid higher pressure | Warning flag set and no repeat |
-| 7. Extraction unlock | Cell count reaches 6 | Toast + marker pulse: `Quota met. Extraction is now active.` | Heads for extraction | Player heading trends toward extraction zone |
-| 8. Final urgency | Timer crosses below 30s | One-shot warning: `Thirty seconds. Commit to extraction now.` | Prioritizes extraction over cell detours | Pathing heads to extraction within 3s target |
-| 9. End coaching | Run ends (win/fail) | Win title/body OR fail title/body + one retry tip on fail | Chooses restart/quit | Restart works in <=2 inputs and resets FTUE run flags |
+| 1. Shift kickoff | Run start (t=0) | Overlay `Orbit is dirty. Shift starts now.` + objective strip | Begins orbit movement | Input detected within 5s |
+| 2. Orbit control hint | No left/right input for 3s | `Left/Right to orbit the planet` | Moves clockwise/counterclockwise | Hint dismisses for this run |
+| 3. Boost hint | No boost used by 8s | `Space: short burst, then cooldown` | Uses boost once | Boost flag marked complete |
+| 4. Carry awareness | First junk pickup | Carry UI pulse + hint `More junk carried means slower turning` | Picks up additional junk | Carry counter updates and remains visible |
+| 5. Deposit tutorial | First recycler entry with carry > 0 | Prompt `Press E in recycler zone to bank points` | Deposits once | Score increases and carry resets |
+| 6. Combo introduction | First successful chained deposit | Toast `Chain held. Combo now {combo}x.` | Attempts next deposit within timeout | Combo multiplier increases above 1.0x |
+| 7. Combo timeout teaching | Active combo chain with <=2.0s remaining | Toast `Combo fading. Deposit now.` + timeout ring turns amber | Deposits or lets combo expire | Warning fires once per chain and state resolves cleanly |
+| 8. Hazard escalation | Timer crosses 121s then 241s | One-shot phase warnings | Adjusts routing to safer lane timing | Each phase warning appears once only |
+| 9. End-state coaching | Timer complete or integrity KO | End summary + single retry tip tied to fail cause | Selects `Restart Shift` or `Quit to Title` | Restart works in <=2 inputs and resets FTUE run flags |
 
 ## FTUE IMPLEMENTATION NOTES (for coder)
-- Reuse one lightweight prompt/toast component with event-keyed text values.
-- Enforce toast queue rules from UX doc: minimum 1.2s gap and fixed priority order.
-- Keep FTUE strings <=72 chars to reduce clipping risk at low resolution.
-- Do not hard-pause gameplay for FTUE; only use non-blocking overlays.
+- Reuse a single lightweight prompt/toast component with event-keyed text.
+- Apply queue rules from UX flow doc: one visible toast, 1.2s min gap, fixed priority.
+- Format `{combo}`/`{combo_cap}` to one decimal; reserve value width in text container.
+- Keep prompts non-blocking; gameplay should continue while FTUE messages appear.
+- Gate intro hints by profile first-run flags; gate warning hints by per-run one-shot flags.
 
 ## FTUE VALIDATION NOTES (for QA)
-- Run first-time profile and returning-profile paths to verify FTUE gating.
-- Force event overlap (damage near 121s and <30s) and confirm warning order/spacing.
-- Validate no more than one warning toast is visible at a time.
-- Validate all one-shot warnings stay one-shot across restart loops.
+- Run first-time profile and returning profile paths.
+- Force rapid deposit sequences to validate combo gain debounce and timeout warning behavior.
+- Force overlap scenarios (phase warning + combo warning + damage) and verify priority ordering.
+- Validate placeholder text rendering at 1280x720 and reduced HUD width.
+- Confirm no FTUE hint loops indefinitely when player intentionally ignores a prompt.
 
 ## RISKS
-- If queue throttling is not applied, warning overlap can hide critical messages.
-- If HUD containers do not wrap/truncate predictably, final-warning text may clip on 720p.
+- Missing debounce/queue limits can flood toast lane during fast deposit chains.
+- Placeholder width guards may fail on localized strings, causing clipped combo messages.

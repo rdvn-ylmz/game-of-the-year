@@ -1,52 +1,60 @@
-# Narrative - Last Light Courier (MVP)
+# Narrative - Pocket Planet Janitor (MVP)
 
 ## TASK META
-- task_id: TASK-0014
+- task_id: TASK-0038
 - owner: narrative
-- pipeline_id: PIPE-0002
+- pipeline_id: PIPE-0004
 - stage: 3/10
 
 ## ACCEPTANCE CRITERIA
-- [x] Narrative frame, mission text, and UI copy hooks are implementation-ready for the MVP loop.
-- [x] Start, warning, fail, and win lines are defined and mapped to clear trigger points.
+- [x] Narrative frame, mission text, and UI copy are implementation-ready for the MVP loop.
+- [x] Phase transitions, combo-state lines, and run-end summaries are defined with clear triggers.
 
 ## NARRATIVE FRAME (MVP)
-- Setting (1-2 sentences): Neon Sector Nine is entering rolling blackout. You are the last active courier, collecting unstable cells to reopen one extraction lane before the grid locks down.
-- Tone: Urgent, clean, and tactical.
-- Main motivation: Hit cell quota fast, unlock extraction, and escape before blackout or integrity collapse.
+- Setting (1-2 sentences): Pocket Planet C-7 is choking on orbital junk after a cargo chain failure. You are a contract cleanup pilot racing the clock to clear debris before meteor and solar activity lock the lane.
+- Tone: Playful urgency with clear operational language.
+- Main motivation: Carry scrap, bank it at the recycler, preserve combo chains, and finish the shift with the highest score possible.
 
 ## CHARACTERS (MVP)
 | Name | Role | Personality | Sample line |
 |---|---|---|---|
-| Kade Rook | Player courier | Focused, disciplined, dry humor | "Route first. Risks second." |
-| Dispatch Iona | Support voice in comms | Direct, calm under pressure | "Clock is running. Collect cells and move." |
-| Sentinel Grid | Automated defense network | Clinical, threatening | "Unauthorized transfer in progress." |
+| Nox Vega | Player pilot | Efficient, dry humor, risk-aware | "Mess first, medals later." |
+| ARC-12 | Recycler control AI | Precise, supportive, concise | "Recycler live. Bring me clean scrap." |
+| Helios Net | Automated hazard system voice | Formal, indifferent | "Solar pulse pattern updated." |
 
 ## MISSION/LEVEL TEXT (MVP)
-- Intro line: "Blackout wave inbound. Stay mobile."
-- Objective line: "Collect 6 energy cells to unlock extraction."
-- Success line: "Extraction secured. Sector pulse restored."
-- Failure line: "Courier signal lost. Sector offline."
+- Intro line: "Orbit is dirty. Shift starts now."
+- Objective line: "Vacuum junk and deposit at recycler for score."
+- Success line: "Shift complete. Score archived. Orbit stabilized."
+- Failure line: "Integrity critical. Cleanup run terminated."
 
-## PHASE + EVENT LINES (MVP)
-- Run start: "Run live. Build a clean route."
-- Mid pressure warning (121s): "Grid surge. Patrol traffic increasing."
-- Final warning (<30s): "Thirty seconds. Commit to extraction now."
-- Damage taken: "Integrity hit. Multiplier reset."
-- Extraction unlocked: "Quota met. Extraction is now active."
-- Run fail: "Mission failed. Re-run and reroute."
-- Run win: "Delivery complete. Last light preserved."
+## PHASE + COMBO + RUN-END LINES (MVP)
+- Run start: "Run live. Build a safe first route."
+- Phase 2 warning (121s): "Meteor lanes tightening. Keep deposits steady."
+- Phase 3 warning (241s): "Solar pulse cadence rising. Bank often."
+- Combo gain: "Chain held. Combo now {combo}x."
+- Combo near timeout: "Combo fading. Deposit now."
+- Combo cap reached: "Combo capped at {combo_cap}x. Cash it in."
+- Combo reset (damage/timeout): "Combo reset to 1.0x. Rebuild the chain."
+- Damage taken: "Hull hit. Stability reduced."
+- Timer complete (run end): "Timer complete. Final score locked."
+- Integrity KO (run fail): "Hull breach. Recovery tug inbound."
+- New personal best: "New personal best. Clean orbit, cleaner record."
 
 ## HANDOFF -> PLAYER_EXPERIENCE & CODER
 - Text integration points (where these strings appear):
-  - Start overlay: intro + run start line.
-  - HUD objective card: objective line and extraction unlocked line.
-  - HUD toast/warning channel: damage line, 121s warning, <30s final warning.
-  - End screen: success/failure mission line plus run win/fail line.
+  - Start overlay: intro line + run start line.
+  - HUD objective panel: objective line and recycler reminder.
+  - HUD toast lane: phase warnings, damage, combo gain/reset/cap, timeout warning.
+  - End screen: success/failure line, timer complete/KO line, PB summary line.
 - Any conditional lines:
-  - Damage line only on integrity loss events.
-  - Extraction line only when `collected_cells >= required_cells` changes false -> true.
-  - 121s warning fires once on entering phase 2; <30s warning fires once when timer drops below 30.
+  - Phase 2 warning on first tick crossing 121s elapsed; phase 3 warning on first tick crossing 241s.
+  - Combo gain on successful deposit inside combo timeout.
+  - Combo near-timeout when remaining combo window <=2.0s and only once per active chain.
+  - Combo cap line when multiplier first reaches `combo_cap`.
+  - Timer complete line when `run_timer <= 0` and integrity > 0; KO line when integrity reaches 0.
+  - PB line only if final score exceeds stored best score.
 - Localization notes (if any):
-  - Keep HUD strings under 72 characters.
-  - Keep phrasing literal; avoid slang and idioms for easier translation.
+  - Keep runtime HUD strings under 72 characters.
+  - Use placeholders (`{combo}`, `{combo_cap}`) with numeric formatting to one decimal.
+  - Avoid idioms that break direct translation.

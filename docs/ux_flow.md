@@ -1,9 +1,9 @@
-# UX Flow - Last Light Courier (MVP)
+# UX Flow - Pocket Planet Janitor (MVP)
 
 ## TASK META
-- task_id: TASK-0015
+- task_id: TASK-0039
 - owner: player_experience
-- pipeline_id: PIPE-0002
+- pipeline_id: PIPE-0004
 - stage: 4/10
 
 ## ACCEPTANCE CRITERIA
@@ -12,81 +12,96 @@
 
 ## UX FLOWS (MVP)
 1. Start game
-- Title screen shows one primary CTA: `Start Run`.
-- Above CTA, show mission objective line: `Collect 6 energy cells to unlock extraction.`
-- First-ever launch only, show compact control hint strip (`Move`, `Dash`) and auto-hide on first input.
-- Press `Start Run` to enter gameplay immediately (no intermediate setup screen).
+- Title screen shows one primary CTA: `Start Shift`.
+- Objective line appears above CTA: `Vacuum junk and deposit at recycler for score.`
+- First launch only: compact hint strip for orbit and boost controls.
+- One input enters gameplay; no intermediate setup/config screen.
 
 2. Main menu (minimal)
-- Title options: `Start Run`, `How to Play` (single overlay card).
-- Pause options only: `Resume`, `Restart`, `Quit to Title`.
-- Keep personal best and last-run summary in a small read-only panel.
-- Use one panel component for title/pause/end to reduce UI complexity on low-spec.
+- Title options: `Start Shift`, `How to Play` (single overlay card).
+- Pause options: `Resume`, `Restart Shift`, `Quit to Title`.
+- Keep PB + last run score in one small read-only panel.
+- Reuse one panel template for title, pause, and end screen to limit UI complexity.
 
 3. Gameplay loop
-- Persistent HUD: timer, integrity (HP), cells (`x/6`), multiplier, score.
-- Start messaging sequence:
-  - Overlay line: `Blackout wave inbound. Stay mobile.`
-  - Toast line: `Run live. Build a clean route.`
-- Damage event: brief red flash + toast `Integrity hit. Multiplier reset.`
-- Warning cadence rules (to avoid overlap):
-  - Mid warning at 121s, one-shot: `Grid surge. Patrol traffic increasing.`
-  - Final warning at `<30s`, one-shot: `Thirty seconds. Commit to extraction now.`
-  - Minimum 1.2s gap between queued warning toasts.
-  - Priority order if collisions occur: fail/win > extraction unlock > final warning > damage > mid warning.
-- Extraction unlock event (`cells == 6`): marker pulse + toast `Quota met. Extraction is now active.`
+- Persistent HUD: timer, integrity hearts, carry count, combo multiplier, combo timeout ring, score.
+- Run start messaging:
+  - Overlay: `Orbit is dirty. Shift starts now.`
+  - Toast: `Run live. Build a safe first route.`
+- Core action rhythm:
+  - Collect scrap -> carry stack grows -> movement feels heavier.
+  - Enter recycler zone + press `Deposit` to bank score and progress combo.
+  - Decide to bank now or keep carrying for higher risk/reward.
+- Hazard + combo alert cadence:
+  - Phase 2 warning at 121s (one-shot): `Meteor lanes tightening. Keep deposits steady.`
+  - Phase 3 warning at 241s (one-shot): `Solar pulse cadence rising. Bank often.`
+  - Combo near-timeout warning when remaining combo window <= 2.0s (one-shot per active chain): `Combo fading. Deposit now.`
+  - Combo cap alert when cap first reached: `Combo capped at {combo_cap}x. Cash it in.`
+- Toast queue rules (low-spec readability):
+  - Max 1 toast visible at once.
+  - Minimum 1.2s between toast start times.
+  - Priority order: run-end critical > KO/damage > phase warning > combo timeout > combo cap > combo gain.
+  - Debounce repeated combo gain lines to avoid spam during rapid deposits.
+- Placeholder safety:
+  - Format `{combo}` and `{combo_cap}` with one decimal (e.g., `1.4`).
+  - Reserve fixed width for placeholder values and truncate trailing text if needed on 720p.
 
 4. End of run
-- End panel appears after brief 250-300ms transition and freezes hazard simulation.
-- Win hierarchy:
-  - Title: `Delivery complete. Last light preserved.`
-  - Body/support line: `Extraction secured. Sector pulse restored.`
-- Fail hierarchy:
-  - Title: `Mission failed. Re-run and reroute.`
-  - Body/support line: `Courier signal lost. Sector offline.`
-- Stats row: final score, PB delta, cells collected, survival time.
-- Actions: primary `Restart`, secondary `Quit to Title`.
+- Freeze simulation and open end panel within 300ms.
+- Timer-complete path:
+  - Title: `Shift Complete`
+  - Body: `Final score locked. Recycler cycle closed.`
+- KO path:
+  - Title: `Hull Failure`
+  - Body: `Recovery tug inbound. Run terminated.`
+- Optional PB badge if score beats local best:
+  - Badge: `New Personal Best`
+  - Body: `Clean orbit, cleaner record.`
+- Actions: primary `Restart Shift`, secondary `Quit to Title`.
 
 ## FEEDBACK & JUICE (minimal)
 - Visual feedback:
-  - Damage flash (120ms), extraction marker pulse, timer pulse in final 30s.
-  - One warning toast visible at a time; queue extra warnings by priority.
+  - Recycler pulse on valid deposit window.
+  - Combo timeout ring shifts from cyan to amber in final 2s.
+  - Damage flash + brief knockback tint.
+  - Meteor lane and solar pulse telegraphs stay high contrast and non-animated beyond simple alpha pulse.
 - Audio feedback:
-  - Short SFX: pickup, damage, unlock, fail/win stinger.
-  - Final-30s metronome tick, single source only (no stacked loops).
+  - Short pickup tick, deposit confirm, combo up cue, combo break cue, damage hit cue.
+  - Distinct phase warning ping and end-state stinger.
+  - Keep one warning channel active at a time to avoid clutter.
 - Haptics (if mobile):
   - Short vibration on damage.
-  - Medium vibration on extraction unlock.
-  - Disable gracefully when vibration API is unavailable.
+  - Medium vibration on successful deposit at combo >= 1.6x.
+  - Disable gracefully when vibration API unavailable.
 
 ## FRICTION CHECKLIST
 - [x] Clear goal in first 10 seconds.
-- [x] Failure teaches player (fail panel includes one retry tip).
+- [x] Failure teaches player (show cause + one retry tip on end panel).
 - [x] Menus are minimal.
 
 ## QA TEST NOTES (MVP)
-1. First launch shows controls hint once; later launches do not repeat unless profile reset.
-2. Start flow reaches live gameplay in one input.
-3. HUD text remains readable at 1280x720 with no clipping in objective/warning regions.
-4. Mid warning fires exactly once at 121s and never repeats on subsequent seconds.
-5. Final warning fires exactly once when timer crosses below 30s.
-6. If damage happens near warning thresholds, toast queue enforces a minimum 1.2s gap and stable priority ordering.
-7. Extraction unlock fires once at `cells == 6` and does not retrigger on additional cell pickups.
-8. End panel shows correct title/body hierarchy for win and fail outcomes.
-9. Restart resets timer, HP, cells, multiplier, warnings-fired flags, and toast queue state.
-10. Pause menu blocks movement/dash input while active.
+1. First-run controls hint appears once; does not reappear on normal restarts.
+2. Start screen enters gameplay in one input.
+3. Combo timeout warning fires once per chain when remaining window <= 2.0s.
+4. Phase warnings fire exactly once at 121s and 241s.
+5. Toast queue never shows more than one toast at a time under rapid deposit spam.
+6. Combo gain messages are debounced and do not flood the HUD.
+7. Placeholder lines (`{combo}`, `{combo_cap}`) remain readable at 1280x720 and small-width HUD containers.
+8. KO path and timer-complete path show correct end title/body and actions.
+9. New PB badge appears only when final score exceeds stored best.
+10. Restart Shift resets timer, integrity, carry stack, combo state, and one-shot warning flags.
 
 ## HANDOFF -> CODER & QA
 - Implementation order:
-  1) HUD layout and toast queue with priority + minimum gap.
-  2) End screen hierarchy and restart path.
-  3) FTUE prompts integrated into start, damage, unlock, and final-warning events.
-  4) Readability pass for low-resolution HUD containers.
+  1) HUD frame with carry/combo/timer + timeout ring.
+  2) Toast queue service (priority, min-gap, debounce, one-shot gates).
+  3) End screen hierarchy for timer-complete/KO/PB states.
+  4) FTUE prompt triggers and first-run gating.
 - Risky UX areas:
-  - Warning collisions under high event density on low-end hardware.
-  - HUD copy clipping when localized text expands.
-  - Overly repetitive fail messaging if retry tip rotation is not implemented.
+  - Toast overlap during combo-heavy play plus phase warnings.
+  - Placeholder width overflow for `{combo}` and `{combo_cap}` on small HUD widths.
+  - Combo timeout feedback may be missed if telegraph contrast is too subtle.
 - What "done" looks like:
-  - Player understands objective and controls in first 10 seconds without external help.
-  - Warning cadence is readable and non-overlapping in edge-timing scenarios.
-  - QA scenarios pass across win/fail paths and restart loops.
+  - New player can orbit, collect, deposit, and understand combo risk in first minute.
+  - Warnings are readable and non-overlapping during high event density.
+  - QA scenarios pass across timer-complete, KO, and PB branches.

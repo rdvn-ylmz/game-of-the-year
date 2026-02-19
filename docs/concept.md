@@ -1,52 +1,53 @@
-# Implementation Sprint v1 - Concept
+# Creative Sprint v2 - Concept
 
 ## Task Meta
-- task_id: TASK-0012
+- task_id: TASK-0036
 - owner: concept
-- pipeline_id: PIPE-0002
+- pipeline_id: PIPE-0004
 - stage: 1/10
 
 ## Concept Summary
-*Last Light Courier* is a playable, low-spec browser arcade game for players who want short mastery loops: each 5-8 minute run asks the player to route through a collapsing city, collect energy cells, and extract before blackout while avoiding drones and laser hazards; the fun comes from quick movement decisions, escalating pressure, and immediate replay after each run.
+*Pocket Planet Janitor* is a whimsical browser arcade game for players who like short, high-focus score runs: you orbit a tiny cluttered planet as the last maintenance pilot, vacuuming drifting space junk and dumping it into a recycler before meteor weather overwhelms the orbit lanes; it is fun because movement is simple but expressive, carrying junk creates constant risk/reward tension, and each run feels like a fast escalating cleanup puzzle.
 
 ## Pillars
-1. Readable, skill-based movement (move + dash, tight control feel).
-2. Constant risk/reward routing (safe path vs score-efficient path).
-3. Predictable escalation (pressure rises in clear phases).
-4. Fast replay loop (instant reset, score chase, low friction UI).
+1. One-screen orbital mastery (clean controls, immediate readability).
+2. Risky carrying decisions (hold more junk for combo vs bank now for safety).
+3. Escalating sky events (meteor swarms and solar bursts change route safety).
+4. Instant retry loop (short runs, fast restart, high-score chase).
 
 ## Core Loop
-1. Start run, read objective and timer, pick route.
-2. Collect required cells while avoiding hazards and protecting multiplier.
-3. Reach extraction before blackout, score run, restart immediately.
+1. Orbit the planet, capture drifting junk clusters, and build carry stack.
+2. Dodge hazards while deciding when to cash in at recycler gates for combo points.
+3. Survive escalating weather phases, maximize score, and restart instantly.
 
 ## Scope
 ### MVP (must ship)
-- Browser desktop-first playable build.
-- One mode: solo score attack.
-- One player kit: movement + dash.
-- Core threats: laser grid + patrol drones.
-- Objective: collect cells to unlock extraction.
-- HUD + title + end screen + restart flow.
-- Local best-score persistence.
+- Browser game, desktop-first, single-screen arena.
+- One playable pilot with orbit movement + short boost.
+- Two junk types with shared pickup behavior.
+- Two hazards: meteor shower lanes and timed solar pulse zones.
+- One recycler objective with combo scoring on deposit.
+- One session mode: timed score run (5-7 minutes).
+- Minimal UI: title, HUD (time/score/carry/combo), end screen, restart.
+- Local personal-best storage.
 
 ### Later (nice to have)
-- Additional layouts, hazards, and ability variants.
-- Daily seed / online leaderboard.
-- Cosmetic rewards and meta-progression.
-- Touch controls and extended accessibility options.
+- Additional planet variants with unique hazard patterns.
+- Pilot abilities (magnet pulse, emergency shield).
+- Daily seeded runs and lightweight leaderboard.
+- Cosmetic trail effects and accessibility presets.
 
 ## Risks / Open Questions
 ### Risks
-- Low-end performance regressions can reduce input precision.
-- Overtuned early hazard pacing can feel unfair.
-- Content variety may feel thin if layout differences are weak.
+- Orbital movement can feel slippery if acceleration is not tuned tightly.
+- Hazard readability may drop on small screens if effects overlap.
+- Combo economy may snowball too hard without early cap controls.
 
 ### Open Questions
-- MVP input target: keyboard only, or keyboard + touch fallback?
-- Keep score/local progression fully offline in MVP, or add backend leaderboard now?
+- MVP should ship keyboard-only, or include basic touch controls immediately?
+- Should recycler have one universal drop zone in MVP, or multiple lanes for depth?
 
 ## Handoff -> Game Design
-- Design focus: convert pillars into concrete systems, numeric balance knobs, and phase pacing.
-- Assumptions: desktop browser first, low-spec profile, OOP-first implementation constraints, 5-8 minute sessions.
-- MVP boundaries: single mode, minimal UI, no cosmetics, no live-service requirements.
+- Design focus: define orbit/boost movement parameters, carry/combo scoring model, and phase-based hazard pacing.
+- Assumptions: low-spec browser target, one-screen gameplay, local-only persistence, no backend dependency in MVP.
+- MVP boundaries: single mode, single character kit, minimal UI flow, no live events or meta progression required.

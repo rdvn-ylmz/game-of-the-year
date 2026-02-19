@@ -1,20 +1,17 @@
 import { GameRuntime, UI_COPY } from "./game_state.mjs";
 import { ToastQueue } from "./toast_queue.mjs";
+import { CanvasGame } from "./game_canvas.mjs";
 
 const STORAGE_KEYS = Object.freeze({
-  seenFtue: "llc_seen_ftue",
-  bestScore: "llc_best_score",
-  lastResult: "llc_last_result"
+  seenFtue: "ppj_seen_ftue",
+  bestScore: "ppj_best_score",
+  lastResult: "ppj_last_result"
 });
 
 const MOVEMENT_KEYS = new Set([
-  "arrowup",
-  "arrowdown",
   "arrowleft",
   "arrowright",
-  "w",
   "a",
-  "s",
   "d"
 ]);
 
@@ -29,29 +26,33 @@ const elements = {
   startRun: document.getElementById("start-run"),
   timer: document.getElementById("timer"),
   integrity: document.getElementById("integrity"),
-  cells: document.getElementById("cells"),
-  multiplier: document.getElementById("multiplier"),
+  carry: document.getElementById("carry"),
+  combo: document.getElementById("combo"),
+  comboTimeout: document.getElementById("combo-timeout"),
   score: document.getElementById("score"),
   objective: document.getElementById("objective-strip"),
   toast: document.getElementById("toast"),
   overlay: document.getElementById("ftue-overlay"),
-  collectCell: document.getElementById("collect-cell"),
+  collectScrap: document.getElementById("collect-scrap"),
+  depositCarry: document.getElementById("deposit-carry"),
   takeHit: document.getElementById("take-hit"),
-  extractNow: document.getElementById("extract-now"),
   endPanel: document.getElementById("end-panel"),
   endTitle: document.getElementById("end-title"),
   endBody: document.getElementById("end-body"),
   endTip: document.getElementById("end-tip"),
   statScore: document.getElementById("stat-score"),
   statDelta: document.getElementById("stat-delta"),
-  statCells: document.getElementById("stat-cells"),
+  statCarry: document.getElementById("stat-carry"),
   statTime: document.getElementById("stat-time"),
   restartRun: document.getElementById("restart-run"),
-  quitTitle: document.getElementById("quit-title")
+  quitTitle: document.getElementById("quit-title"),
+  canvas: document.getElementById("game-canvas"),
+  pauseBtn: document.getElementById("pause-btn")
 };
 
 let rafTime = performance.now();
 let pendingEndPanelTimer = null;
+let canvasGame = null;
 
 function safeGetItem(key) {
   try {
@@ -100,14 +101,33 @@ function showScreen(name) {
   elements.gameScreen.hidden = name !== "game";
 }
 
+function isGameplayPaused() {
+  return runtime.isPaused() || Boolean(canvasGame && canvasGame.paused);
+}
+
+function canDispatchGameplayAction() {
+  return Boolean(canvasGame) && runtime.isRunning() && !isGameplayPaused();
+}
+
+function togglePause() {
+  if (!canvasGame || !runtime.isRunning()) {
+    return false;
+  }
+
+  const paused = runtime.setPaused(!runtime.isPaused());
+  canvasGame.setPaused(paused);
+  elements.pauseBtn.textContent = paused ? "Resume" : "Pause";
+  return paused;
+}
+
 function renderTitleMeta() {
   const best = readBestScore();
   const last = readLastResult();
   if (!last) {
-    elements.titleMeta.textContent = `Best score: ${best} | No completed runs yet.`;
+    elements.titleMeta.textContent = `Best score: ${best} | No completed shifts yet.`;
     return;
   }
-  elements.titleMeta.textContent = `Best score: ${best} | Last run: ${last.outcome} (${last.score})`;
+  elements.titleMeta.textContent = `Best score: ${best} | Last shift: ${last.outcome} (${last.score})`;
 }
 
 function startRun() {
@@ -123,8 +143,14 @@ function startRun() {
     safeSetItem(STORAGE_KEYS.seenFtue, "1");
   }
 
+  if (!canvasGame) {
+    canvasGame = new CanvasGame(elements.canvas, runtime);
+  }
+  canvasGame.init();
+
   elements.endPanel.hidden = true;
   elements.toast.hidden = true;
+  elements.pauseBtn.textContent = "Pause";
   showScreen("game");
   processEvents();
   renderHud(runtime.getSnapshot());
@@ -136,6 +162,11 @@ function quitToTitle() {
     pendingEndPanelTimer = null;
   }
 
+  if (canvasGame) {
+    canvasGame.setPaused(true);
+    runtime.setPaused(true);
+  }
+
   toastQueue.reset();
   showScreen("title");
   elements.endPanel.hidden = true;
@@ -144,11 +175,43 @@ function quitToTitle() {
   renderTitleMeta();
 }
 
-function showToast(message, tone = "neutral") {
+function escapeHtml(text) {
+  return String(text)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function renderToastMessage(template, values) {
+  if (!values) {
+    return `<span class="toast-message">${escapeHtml(template)}</span>`;
+  }
+
+  const segments = String(template).split(/\{([a-z_]+)\}/g);
+  let html = "";
+  for (let index = 0; index < segments.length; index += 1) {
+    if (index % 2 === 1) {
+      const value = values[segments[index]];
+      if (value !== undefined) {
+        html += `<span class="toast-slot">${escapeHtml(value)}</span>`;
+      } else {
+        html += escapeHtml(`{${segments[index]}}`);
+      }
+    } else {
+      html += escapeHtml(segments[index]);
+    }
+  }
+
+  return `<span class="toast-message">${html}</span>`;
+}
+
+function showToast(toast) {
   elements.toast.hidden = false;
   elements.toast.className = "";
-  elements.toast.classList.add(tone);
-  elements.toast.textContent = message;
+  elements.toast.classList.add(toast.tone ?? "neutral");
+  elements.toast.innerHTML = renderToastMessage(toast.message, toast.values);
 }
 
 function hideToast() {
@@ -172,14 +235,15 @@ function renderOverlay(event) {
 function renderHud(snapshot) {
   elements.timer.textContent = `${snapshot.timeLeftRounded}s`;
   elements.integrity.textContent = String(snapshot.hp);
-  elements.cells.textContent = `${snapshot.cells}/${snapshot.requiredCells ?? 6}`;
-  elements.multiplier.textContent = `x${snapshot.multiplier.toFixed(1)}`;
+  elements.carry.textContent = String(snapshot.carryCount);
+  elements.combo.textContent = `x${snapshot.comboText}`;
+  elements.comboTimeout.textContent = `${snapshot.comboWindowText}s`;
   elements.score.textContent = String(snapshot.scoreRounded);
 
-  if (snapshot.timeLeft < 30) {
-    elements.timer.classList.add("is-low");
+  if (snapshot.comboWindowRemaining > 0 && snapshot.comboWindowRemaining <= 2) {
+    elements.comboTimeout.classList.add("is-low");
   } else {
-    elements.timer.classList.remove("is-low");
+    elements.comboTimeout.classList.remove("is-low");
   }
 }
 
@@ -187,7 +251,8 @@ function showEndPanel(event) {
   const previousBest = readBestScore();
   const currentScore = event.stats.finalScore;
   const bestDelta = currentScore - previousBest;
-  if (currentScore > previousBest) {
+  const isNewBest = currentScore > previousBest;
+  if (isNewBest) {
     writeBestScore(currentScore);
   }
 
@@ -200,12 +265,20 @@ function showEndPanel(event) {
   elements.endBody.textContent = event.body;
   elements.statScore.textContent = String(currentScore);
   elements.statDelta.textContent = `${bestDelta >= 0 ? "+" : ""}${bestDelta}`;
-  elements.statCells.textContent = `${event.stats.cellsCollected}/${event.stats.requiredCells}`;
+  elements.statCarry.textContent = String(event.stats.carryCount);
   elements.statTime.textContent = `${event.stats.survivedSeconds}s`;
 
+  const notes = [];
+  if (isNewBest) {
+    notes.push(`${event.pbBadge}. ${event.pbBody}`);
+  }
   if (event.tip) {
+    notes.push(event.tip);
+  }
+
+  if (notes.length > 0) {
     elements.endTip.hidden = false;
-    elements.endTip.textContent = event.tip;
+    elements.endTip.textContent = notes.join(" ");
   } else {
     elements.endTip.hidden = true;
     elements.endTip.textContent = "";
@@ -232,7 +305,7 @@ function syncToastQueue(now) {
   }
 
   if (state.active) {
-    showToast(state.active.message, state.active.tone);
+    showToast(state.active);
     return;
   }
 
@@ -240,21 +313,25 @@ function syncToastQueue(now) {
 }
 
 function processEvents() {
+  const nowMs = performance.now();
   const events = runtime.drainEvents();
   for (const event of events) {
     if (event.type === "objective") {
       elements.objective.textContent = event.message;
-    } else if (event.type === "objective_update") {
-      elements.cells.textContent = `${event.current}/${event.total}`;
     } else if (event.type === "toast") {
-      toastQueue.enqueue(event);
+      toastQueue.enqueue(event, nowMs);
     } else if (event.type === "overlay") {
       renderOverlay(event);
-    } else if (event.type === "feedback" && event.key === "extraction_pulse") {
-      elements.objective.style.borderColor = "#6be895";
+    } else if (event.type === "feedback" && event.key === "carry_pulse") {
+      elements.carry.style.color = "#6be895";
       setTimeout(() => {
-        elements.objective.style.borderColor = "";
-      }, 450);
+        elements.carry.style.color = "";
+      }, 300);
+    } else if (event.type === "feedback" && event.key === "deposit") {
+      elements.combo.style.color = "#6be895";
+      setTimeout(() => {
+        elements.combo.style.color = "";
+      }, 300);
     } else if (event.type === "feedback" && event.key === "damage") {
       elements.gameScreen.style.boxShadow = "0 0 0 2px #ff5f6d inset";
       setTimeout(() => {
@@ -270,22 +347,38 @@ function processEvents() {
 }
 
 function handleKeydown(event) {
-  if (elements.gameScreen.hidden || !runtime.isRunning()) {
+  if (elements.gameScreen.hidden) {
     return;
   }
 
   const key = event.key.toLowerCase();
+  
+  if (key === "p") {
+    togglePause();
+    return;
+  }
+
+  if (!runtime.isRunning()) {
+    return;
+  }
+
+  if (isGameplayPaused()) {
+    return;
+  }
+
   if (MOVEMENT_KEYS.has(key)) {
     runtime.registerMovement();
   } else if (event.code === "Space") {
-    runtime.useDash();
+    runtime.useBoost();
     event.preventDefault();
-  } else if (key === "c") {
-    runtime.collectCell();
-  } else if (key === "h") {
-    runtime.takeDamage();
   } else if (key === "e") {
-    runtime.attemptExtraction();
+    if (canvasGame) {
+      canvasGame.deposit();
+    }
+  } else if (key === "h") {
+    if (canvasGame) {
+      canvasGame.forceDamage();
+    }
   }
 }
 
@@ -293,8 +386,40 @@ function update(now) {
   const deltaSeconds = Math.min((now - rafTime) / 1000, 0.25);
   rafTime = now;
 
-  if (runtime.isRunning()) {
+  const isPaused = isGameplayPaused();
+  const isGameOver = canvasGame && canvasGame.gameOver;
+
+  if (runtime.isRunning() && !isPaused) {
     runtime.tick(deltaSeconds);
+    
+    if (canvasGame && !isGameOver) {
+      canvasGame.update(deltaSeconds);
+      
+      const snapshot = runtime.getSnapshot();
+      if (snapshot.elapsed >= 121 && snapshot.elapsed < 122) {
+        canvasGame.setPhase(2);
+      } else if (snapshot.elapsed >= 241 && snapshot.elapsed < 242) {
+        canvasGame.setPhase(3);
+      }
+      
+      if (canvasGame.player) {
+        runtime.syncPlayerState({
+          hp: canvasGame.player.hp,
+          carryCount: canvasGame.player.carryCount,
+          carryValue: canvasGame.player.carryValue
+        });
+      }
+      
+      if (canvasGame.gameOver) {
+        if (canvasGame.player && canvasGame.player.hp <= 0) {
+          runtime.endRunFromGameOver();
+        }
+      }
+    }
+  }
+
+  if (canvasGame) {
+    canvasGame.draw();
   }
 
   processEvents();
@@ -306,9 +431,30 @@ function update(now) {
 elements.startRun.addEventListener("click", startRun);
 elements.restartRun.addEventListener("click", startRun);
 elements.quitTitle.addEventListener("click", quitToTitle);
-elements.collectCell.addEventListener("click", () => runtime.collectCell());
-elements.takeHit.addEventListener("click", () => runtime.takeDamage());
-elements.extractNow.addEventListener("click", () => runtime.attemptExtraction());
+elements.collectScrap.addEventListener("click", () => {
+  if (canDispatchGameplayAction()) {
+    const debris = canvasGame.debris.find(d => !d.collected);
+    if (debris) {
+      debris.collected = true;
+      canvasGame.player.carryCount++;
+      canvasGame.player.carryValue += debris.value;
+      runtime.collectScrap({ value: debris.value });
+    }
+  }
+});
+elements.depositCarry.addEventListener("click", () => {
+  if (canDispatchGameplayAction()) {
+    canvasGame.forceDeposit();
+  }
+});
+elements.takeHit.addEventListener("click", () => {
+  if (canDispatchGameplayAction()) {
+    canvasGame.forceDamage();
+  }
+});
+elements.pauseBtn.addEventListener("click", () => {
+  togglePause();
+});
 document.addEventListener("keydown", handleKeydown);
 
 elements.objective.textContent = UI_COPY.objective;

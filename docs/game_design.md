@@ -1,84 +1,101 @@
-# Game Design - Implementation Sprint v1
+# Game Design - Pocket Planet Janitor (MVP)
 
 ## TASK META
-- task_id: TASK-0013
+- task_id: TASK-0037
 - owner: game_design
-- pipeline_id: PIPE-0002
+- pipeline_id: PIPE-0004
 - stage: 2/10
 
 ## ACCEPTANCE CRITERIA
-- [x] Core loop, systems, progression/economy, and content pacing are implementable for MVP.
-- [x] Balance knobs are documented with default values for coder tuning.
+- [x] Core loop, systems, progression, and pacing are implementable for MVP.
+- [x] Balance knobs include concrete defaults for movement, combo, and hazards.
 
 ## DESIGN OVERVIEW
-- Game mode(s): Solo score attack (single-player run).
-- Session length target: 5-8 minutes (default run timer: 360s).
+- Game mode(s): Single-player timed score run.
+- Session length target: 5-7 minutes (default 360s).
 - Win/lose conditions:
-  - Win: Collect required cells, unlock extraction, reach extraction before blackout.
-  - Lose: Timer reaches 0 or player integrity reaches 0.
+  - Win state: survive until timer ends and submit score.
+  - Early lose: integrity reaches 0.
 
 ## CORE LOOP (implementable)
-1. Spawn in one of three city layouts, read timer/cell target, select route.
-2. Move and dash through hazards to collect cells, avoid damage to preserve multiplier.
-3. Unlock extraction after target cells, extract for bonus score, store best score, restart instantly.
+1. Orbit the planet, vacuum junk pieces, and build carry stack.
+2. Choose risk: keep carrying for combo growth or bank at recycler now.
+3. Dodge meteor lanes and solar pulses, deposit junk for score, end run on timer/KO.
 
 ## SYSTEMS (MVP)
 | System | Purpose | Inputs | Outputs | Notes |
 |---|---|---|---|---|
-| Movement + Dash | Skill expression and traversal | Direction input, dash input, dt | Position, velocity, dash state | Fixed timestep update and speed cap for low-spec stability. |
-| Integrity (HP) | Failure pressure | Hazard collisions | HP value, fail state | Baseline HP=3; each hit deals 1 damage. |
-| Run Timer | Session pressure | Start time, dt | Time remaining, blackout fail | 360s baseline with warning at 30s. |
-| Cell Objective | Gate extraction | Pickup events | Cell count, unlock state | Extraction unlock at required cell count. |
-| Hazard Director | Escalation pacing | Elapsed time, seed | Drone cap/speed, laser timing profile | Phase shifts at 120s and 240s. |
-| Drone Patrol | Moving enemy pressure | Waypoints, speed, player proximity | Drone transforms, collision checks | Max active drone cap to protect performance. |
-| Laser Grid | Area denial and timing challenge | Node pattern, cycle timer | Active/inactive hazard tiles | Deterministic cycle per seed for fairness. |
-| Score + Multiplier | Replay motivation | Pickups, survival ticks, extraction, damage | Run score, multiplier | Damage resets multiplier to 1.0. |
-| Local Persistence | Lightweight progression | Run end summary | Best score (overall + per layout) | Local storage only, no backend in MVP. |
-| HUD + End Screen | Readability and restart speed | Game state values | Timer, score, cells, HP, multiplier, restart CTA | Minimal UI set only. |
+| Orbit Movement | Core control feel | Left/right input, accel, damping, dt | Orbit angle, angular velocity | One-axis orbital model for low CPU cost. |
+| Boost Burst | Recovery and skill ceiling | Boost input, cooldown, carry load | Temporary speed gain, cooldown state | Short burst; disabled during hit-stun. |
+| Carry Stack | Risk/reward pressure | Junk pickup events | Carry count, move penalty | Higher carry reduces accel for tension. |
+| Recycler Deposit | Banking objective | Enter recycler zone + deposit input | Banked score, carry reset | Single recycler gate keeps readability high. |
+| Combo Chain | Score mastery | Deposit timing, damage events, timeout | Combo multiplier, combo chain | Hard cap prevents score snowball. |
+| Junk Spawner | Resource flow | Spawn timer, seed, max active | Junk entities | Two junk types, shared pickup behavior. |
+| Meteor Lanes | Primary hazard | Phase profile, lane seeds | Active danger lanes | Telegraph lane for fairness. |
+| Solar Pulse Zones | Secondary hazard | Phase timer, pulse pattern | Active pulse rings | Brief warning flash before pulse. |
+| Integrity + iFrames | Failure state control | Hazard hits | HP value, invuln timer, KO state | HP=3, iFrame keeps hits readable. |
+| Run State + Persistence | Session lifecycle | Start/end events, score updates | Timer, end state, local PB | Local storage only. |
 
 ## PROGRESSION & ECONOMY (simple)
-- Currency (if any): None (score-only progression).
+- Currency (if any): No persistent currency.
 - Rewards:
-  - Score from cell pickups, survival time, extraction completion.
-  - Local personal best updates for replay motivation.
+  - Run score from deposit value multiplied by combo.
+  - Local personal best and last-run stats.
 - Unlocks:
-  - No meta-unlocks in MVP.
-  - In-run unlock only: extraction opens after required cells collected.
+  - No meta unlocks in MVP.
+  - In-run only: combo tier escalation by successful chained deposits.
 
 ## CONTENT PLAN (MVP)
 - Levels/missions count:
-  - 3 layouts: Small Blocks, Split Avenue, Ring Sector.
-  - 1 mission type: collect cells then extract.
+  - 1 single-screen planet arena.
+  - 1 mission: maximize score before timer/KO.
 - Enemies/obstacles list:
-  - Laser grid (timed on/off).
-  - Patrol drones (waypoint-based, phase-scaled speed/count).
+  - Meteor lanes.
+  - Solar pulse zones.
 - Items/abilities list:
-  - Energy cell collectible.
-  - Player movement.
-  - Dash ability with cooldown.
+  - Junk type A (small scrap).
+  - Junk type B (dense core; same pickup rules, higher value).
+  - Pilot boost ability.
 
 ## BALANCE KNOBS
 1. run_timer_seconds = 360
-2. required_cells = 6
-3. player_move_speed_px_s = 220
-4. player_dash_duration_s = 0.18
-5. player_dash_cooldown_s = 2.2
-6. player_hp = 3
-7. drone_base_speed_px_s = 120
-8. max_active_drones = 3
-9. laser_on_off_seconds = 2.0/1.4
-10. multiplier_gain_interval_s = 10
+2. orbit_accel_deg_s2 = 300
+3. orbit_damping = 0.90
+4. max_orbit_speed_deg_s = 220
+5. boost_speed_bonus_deg_s = 140
+6. boost_duration_s = 0.22
+7. boost_cooldown_s = 2.4
+8. carry_soft_cap = 6
+9. combo_step = 0.2 (cap 2.0x)
+10. combo_timeout_s = 8
+
+## SCORING MODEL (MVP)
+- Junk base values:
+  - Small scrap: 60
+  - Dense core: 100
+- Deposit score formula:
+  - `deposit_points = (sum(carried_values)) * combo_multiplier`
+- Combo rules:
+  - Starts at `1.0x`
+  - `+0.2x` per successful deposit within timeout window
+  - Hard cap: `2.0x`
+  - Resets to `1.0x` on damage or timeout
+
+## PHASE PACING (360s default)
+- Phase 1 (0-120s): sparse meteor lanes, low solar pulse frequency.
+- Phase 2 (121-240s): meteor interval shortens, pulse frequency increases.
+- Phase 3 (241-360s): densest lane coverage and fastest pulse cadence.
 
 ## HANDOFF -> NARRATIVE & PLAYER_EXPERIENCE
 - Narrative needs (characters, setting, mission beats):
-  - Courier identity and city blackout premise.
-  - Brief beat text for start, mid-pressure, final 30s warning, fail/win states.
-  - Mission tone aligned with urgency and replay cadence.
+  - Define pilot identity, planet status, and cleanup urgency tone.
+  - Write short beats for phase transitions and end-state summaries.
+  - Keep text playful but readable in 1-2 lines per beat.
 - UX needs (FTUE, menus, feedback):
-  - FTUE for move/dash/cell objective/extraction unlock.
-  - Minimal menu flow: title -> run -> end -> restart.
-  - Strong feedback for damage, multiplier reset/growth, extraction unlock, timer warning.
+  - FTUE for orbit control, boost, carry, deposit, combo timeout.
+  - Minimal flow: title -> play -> end -> restart.
+  - Clear feedback for carry load, combo timer, hazard telegraph, and damage.
 - Non-goals:
   - No online leaderboard.
-  - No extra characters/abilities.
-  - No cosmetics or meta-progression.
+  - No additional playable pilots.
+  - No cosmetics or meta progression.
